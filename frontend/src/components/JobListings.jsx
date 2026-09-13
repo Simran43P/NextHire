@@ -6,7 +6,7 @@ import { Target } from "lucide-react";
 // true  -> render MOCK_JOBS, no network calls
 // false -> fetch real jobs from the backend via getJobs()
 // The JSX below never needs to change when you flip this.
-const USE_MOCK_DATA = false;
+const USE_MOCK_DATA = true;
 
 function SparkleLogo() {
   return (
@@ -16,7 +16,7 @@ function SparkleLogo() {
   );
 }
 
-export default function JobListings({ jobs , selectedTitles,}) {
+export default function JobListings({ jobs , selectedTitles, setSelectedJobs, setShowATS, }) {
   const [selected, setSelected] = useState([]);
   
 
@@ -41,6 +41,9 @@ export default function JobListings({ jobs , selectedTitles,}) {
 
   const handleProceed = () => {
       console.log("Selected Jobs:", selected);
+
+      setSelectedJobs(selected);
+      setShowATS(true);
     };
 
   const displayedJobs = USE_MOCK_DATA ? MOCK_JOBS : (jobs || []);

@@ -8,6 +8,7 @@ import traceback
 from extractor import extract_resume_data
 from infer_titles import infer_job_titles
 from job_search import search_all_jobs
+from ats_matcher import analyze_job_match
 
 # Initialize the FastAPI app
 app = FastAPI(
@@ -136,4 +137,52 @@ async def api_search_jobs(
         raise HTTPException(
             status_code=500,
             detail=f"Job search failed: {str(e)}"
+        )
+
+@app.post("/api/analyze-ats")
+async def api_analyze_ats(data: dict = Body(...)):
+    """
+    Analyzes a resume profile against a job description using the ATS matcher.
+    """
+    try:
+        resume_profile = data.get("resume_profile")
+        job_description = data.get("job_description")
+
+        if not resume_profile:
+            raise HTTPException(
+                status_code=400,
+                detail="Resume profile is required."
+            )
+
+        if not job_description:
+            raise HTTPException(
+                status_code=400,
+                detail="Job description is required."
+            )
+
+        print("Calling ATS analyzer...")
+
+        analysis = analyze_job_match(
+            resume_profile=resume_profile,
+            job_description=job_description
+        )
+
+        print("ATS analysis completed.")
+
+        return {
+            "status": "success",
+            "analysis": analysis
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("\n========== ATS ANALYSIS ERROR ==========")
+        traceback.print_exc()
+        print("========================================\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"ATS analysis failed: {str(e)}"
         )
