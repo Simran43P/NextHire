@@ -85,7 +85,7 @@ function SkillChip({ skill, evidence, isOpen, onToggle, tone }) {
   );
 }
 
-function AnalysisPanel({ job, state, onRetry, onOptimize }) {
+function AnalysisPanel({ job, state, onRetry, onOptimize, onCoverLetter, onInterviewPrep, onTrack, tracked }) {
   // Keyed by job, so switching jobs collapses the open quote without needing
   // an effect to reset it.
   const [open, setOpen] = useState({ jobId: null, skill: null });
@@ -278,6 +278,35 @@ function AnalysisPanel({ job, state, onRetry, onOptimize }) {
             anything you have not written.
           </p>
 
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-5">
+            <button
+              type="button"
+              onClick={() => onCoverLetter?.(job, analysis)}
+              className="rounded-full border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Cover letter
+            </button>
+            <button
+              type="button"
+              onClick={() => onInterviewPrep?.(job, analysis)}
+              className="rounded-full border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Interview prep
+            </button>
+            <button
+              type="button"
+              onClick={() => onTrack?.(job)}
+              disabled={tracked}
+              className={`rounded-full py-2.5 text-sm font-medium transition-colors ${
+                tracked
+                  ? "bg-green-50 text-green-700 border border-green-200 cursor-default"
+                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {tracked ? "Tracked" : "Save to tracker"}
+            </button>
+          </div>
+
           <div className="text-center mt-4">
             <span className="text-sm text-slate-500">Get upskilling plan</span>
             <span className="bg-blue-50 text-blue-600 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ml-2 align-middle">
@@ -297,6 +326,10 @@ export default function ATSAnalysisDashboard({
   background = false,
   onBack,
   onOptimize,
+  onCoverLetter,
+  onInterviewPrep,
+  onTrack,
+  trackedJobIds = [],
 }) {
   const [jobs, setJobs] = useState(selectedJobs);
   const [selectedId, setSelectedId] = useState(selectedJobs[0]?.id ?? null);
@@ -550,6 +583,10 @@ export default function ATSAnalysisDashboard({
               state={selected ? results[selected.id] : null}
               onRetry={selected ? () => runAnalysis(selected) : undefined}
               onOptimize={onOptimize}
+              onCoverLetter={onCoverLetter}
+              onInterviewPrep={onInterviewPrep}
+              onTrack={onTrack}
+              tracked={selected ? trackedJobIds.includes(selected.job_id) : false}
             />
           </div>
         </div>

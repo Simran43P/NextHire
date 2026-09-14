@@ -8,6 +8,10 @@ The pipeline, one endpoint per stage:
     POST /api/jobs           titles     -> live postings (keyword pre-scored)
     POST /api/analyze-ats    profile+JD -> ATS match analysis
     POST /api/optimize       analysis   -> reviewable tailoring edits
+    POST /api/cover-letter   analysis   -> a cover letter, claims located
+    POST /api/interview-prep analysis   -> likely interview questions
+    GET  /api/skills-gap                -> what is costing you, across postings
+    GET  /api/applications              -> the tracker board
 
 Plus accounts (/api/auth), background work (/api/tasks), and data ownership
 (/api/account). Guests may run the whole pipeline; signing in is what makes the
@@ -29,9 +33,11 @@ import llm
 import tasks
 from routers import (
     account,
+    applications,
     auth as auth_routes,
     optimize,
     pipeline,
+    prep,
     tasks as task_routes,
 )
 
@@ -75,6 +81,8 @@ app.add_middleware(
 app.include_router(auth_routes.router)
 app.include_router(pipeline.router)
 app.include_router(optimize.router)
+app.include_router(prep.router)
+app.include_router(applications.router)
 app.include_router(task_routes.router)
 app.include_router(account.router)
 

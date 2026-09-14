@@ -7,16 +7,22 @@ import JobTitlesDialog from "./components/JobTitlesDialog";
 import JobListings from "./components/JobListings";
 import ATSAnalysisDashboard from "./components/AtsAnalysis";
 import ResumeOptimizer from "./components/ResumeOptimizer";
+import CoverLetter from "./components/CoverLetter";
+import InterviewPrep from "./components/InterviewPrep";
+import ApplicationTracker from "./components/ApplicationTracker";
 import AuthDialog from "./components/AuthDialog";
 import AccountMenu from "./components/AccountMenu";
 import { AuthProvider } from "./auth/AuthContext";
 import { useAuth } from "./auth/context";
 import { awaitTask, fetchProfile, listActiveTasks, saveProfile } from "./api/pipeline";
+import { trackJob } from "./api/tracker";
 
 /**
  * The pipeline, as one explicit state machine.
  *
- *   landing -> review -> titles -> jobs -> ats -> optimize
+ *   landing -> review -> titles -> jobs -> ats -> optimize | cover | interview
+ *
+ * Plus a tracker, reachable at any time once signed in.
  *
  * Each stage is a named step rather than a set of independent booleans, so no
  * combination of flags can render two screens at once or none at all.
@@ -33,6 +39,9 @@ const STEP = {
   jobs: "jobs",
   ats: "ats",
   optimize: "optimize",
+  cover: "cover",
+  interview: "interview",
+  tracker: "tracker",
 };
 
 function Pipeline() {
@@ -50,7 +59,8 @@ function Pipeline() {
   const [selectedTitles, setSelectedTitles] = useState([]);
   const [search, setSearch] = useState({ jobs: [], warnings: [] });
   const [selectedJobs, setSelectedJobs] = useState([]);
-  const [optimising, setOptimising] = useState(null); // { job, analysis }
+  const [focusedJob, setFocusedJob] = useState(null); // { job, analysis }
+  const [trackedJobIds, setTrackedJobIds] = useState([]);
 
   const [resuming, setResuming] = useState(false);
 
@@ -64,7 +74,8 @@ function Pipeline() {
     setSelectedTitles([]);
     setSearch({ jobs: [], warnings: [] });
     setSelectedJobs([]);
-    setOptimising(null);
+    setFocusedJob(null);
+    setTrackedJobIds([]);
   }, []);
 
   // Reattach to work that was already running.
@@ -136,6 +147,14 @@ function Pipeline() {
 
   const header = (
     <div className="fixed top-3 right-6 z-40 flex items-center gap-3">
+      {isAuthenticated && step !== STEP.tracker && (
+        <button
+          onClick={() => setStep(STEP.tracker)}
+          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+        >
+          My applications
+        </button>
+      )}
       {guestHasWork && (
         <button
           onClick={() => {
@@ -236,9 +255,28 @@ function Pipeline() {
           profileId={profileId}
           background={isAuthenticated}
           onBack={() => setStep(STEP.jobs)}
+          trackedJobIds={trackedJobIds}
           onOptimize={(job, analysis) => {
-            setOptimising({ job, analysis });
+            setFocusedJob({ job, analysis });
             setStep(STEP.optimize);
+          }}
+          onCoverLetter={(job, analysis) => {
+            setFocusedJob({ job, analysis });
+            setStep(STEP.cover);
+          }}
+          onInterviewPrep={(job, analysis) => {
+            setFocusedJob({ job, analysis });
+            setStep(STEP.interview);
+          }}
+          onTrack={async (job) => {
+            if (!job?.job_id) return;
+            try {
+              await trackJob({ jobId: job.job_id });
+              setTrackedJobIds((previous) => [...previous, job.job_id]);
+            } catch {
+              // Signed out, or already tracked. The board is the source of
+              // truth either way, so there is nothing useful to say here.
+            }
           }}
         />
         {dialogs}
@@ -251,11 +289,55 @@ function Pipeline() {
       <>
         {header}
         <ResumeOptimizer
-          job={optimising?.job}
-          analysis={optimising?.analysis}
+          job={focusedJob?.job}
+          analysis={focusedJob?.analysis}
           profile={profile}
           profileId={profileId}
           onBack={() => setStep(STEP.ats)}
+        />
+        {dialogs}
+      </>
+    );
+  }
+
+  if (step === STEP.cover) {
+    return (
+      <>
+        {header}
+        <CoverLetter
+          job={focusedJob?.job}
+          analysis={focusedJob?.analysis}
+          profile={profile}
+          profileId={profileId}
+          onBack={() => setStep(STEP.ats)}
+        />
+        {dialogs}
+      </>
+    );
+  }
+
+  if (step === STEP.interview) {
+    return (
+      <>
+        {header}
+        <InterviewPrep
+          job={focusedJob?.job}
+          analysis={focusedJob?.analysis}
+          profile={profile}
+          profileId={profileId}
+          onBack={() => setStep(STEP.ats)}
+        />
+        {dialogs}
+      </>
+    );
+  }
+
+  if (step === STEP.tracker) {
+    return (
+      <>
+        {header}
+        <ApplicationTracker
+          onBack={() => setStep(selectedJobs.length ? STEP.ats : STEP.landing)}
         />
         {dialogs}
       </>

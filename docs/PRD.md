@@ -149,8 +149,8 @@ and each stage is a separate backend call.
 
 ## 4. Current state of the codebase
 
-Establishes the baseline this PRD builds on. **Phases 0, 1, 2 and 3 of
-[BUILD-PLAN.md](BUILD-PLAN.md) are complete**; this table reflects the state
+Establishes the baseline this PRD builds on. **Every phase of
+[BUILD-PLAN.md](BUILD-PLAN.md) is complete**; this table reflects the state
 after that work.
 
 | Area | State | Notes |
@@ -181,10 +181,10 @@ after that work.
 | Fabrication guard | **Built** | `fabrication.py` — every generated claim checked against the profile before it is offered |
 | ATS-safe PDF export | **Built** | `resume_pdf.py` — single column, base-14 fonts, no images, verified by re-extraction |
 | Before/after re-scoring | **Built** | The tailored profile is re-analysed against the same posting |
-| Cover letter generator | **Not started** | Phase 4. Advertised on the landing page |
-| Application tracker | **Not started** | Phase 4. Advertised on the landing page |
-| Interview prep | **Not started** | Phase 4. Advertised on the landing page |
-| Skills gap / upskilling | **Not started** | Phase 4. Marked "Coming soon" in the UI |
+| Cover letter generator | **Built** | `cover_letter.py` — three tones, unsupported claims located per sentence, editable, PDF and text export |
+| Application tracker | **Built** | `routers/applications.py` — board, notes, follow-up dates, response rate |
+| Interview prep | **Built** | `interview.py` — technical, behavioural, and gap-probing questions, cached per profile version |
+| Skills gap / upskilling | **Built** | `gap.py` — aggregated across analyses, lift estimated with the real scoring rule, no model call |
 
 ### 4.1 Defects found in the original code — all resolved
 

@@ -109,6 +109,35 @@ def _build_prompt(
     """
 
 
+def anchor_score(model_score: int, *, evidenced: int, missing_count: int) -> int:
+    """
+    Pull a score towards the coverage its own skill lists support.
+
+    Three clauses, each traceable to an observed failure:
+      - the score may not exceed coverage (the 85% Java role, credited on the
+        strength of skills that posting never mentions),
+      - nor sit far below it (the 10% that contradicted its own lists),
+      - and pessimism within the allowance is left alone, because a missing
+        core requirement should weigh more than a missing nice-to-have and a
+        ratio cannot see the difference.
+
+    Exposed rather than inlined so the skills-gap estimate can ask "what would
+    this have scored with one more skill" using the real scoring rule instead
+    of a second, quietly different one.
+    """
+    if not evidenced and not missing_count:
+        return clamp_score(model_score)
+
+    coverage = clamp_score(round(100 * evidenced / (evidenced + missing_count)))
+    anchored = min(coverage, max(model_score, coverage - _MAX_SCORE_ADJUSTMENT))
+    return clamp_score(
+        min(
+            model_score + _MAX_SCORE_ADJUSTMENT,
+            max(model_score - _MAX_SCORE_ADJUSTMENT, anchored),
+        )
+    )
+
+
 def verdict_for(score: int) -> dict[str, str]:
     """Map a score onto its band label and one-line summary."""
     for threshold, label, summary in _VERDICTS:
@@ -231,23 +260,7 @@ def build_analysis(
     # Pulling upward is equally necessary. The model reported 10% while its own
     # lists named four matched skills against seven missing - a score its own
     # enumeration contradicts, shown right beside those lists.
-    evidenced = len(evidence)
-    if evidenced or missing:
-        coverage = clamp_score(round(100 * evidenced / (evidenced + len(missing))))
-
-        # Three clauses, each traceable to an observed failure:
-        #   - the score may not exceed coverage (the 85% Java role),
-        #   - nor sit far below it (the 10% that contradicted its own lists),
-        #   - and pessimism within the allowance is left alone, because a
-        #     missing core requirement should weigh more than a nice-to-have
-        #     and a ratio cannot see the difference.
-        anchored = min(coverage, max(score, coverage - _MAX_SCORE_ADJUSTMENT))
-
-        # Whatever the lists imply, the model's own judgement is never moved
-        # more than _MAX_SCORE_ADJUSTMENT points.
-        score = clamp_score(
-            min(score + _MAX_SCORE_ADJUSTMENT, max(score - _MAX_SCORE_ADJUSTMENT, anchored))
-        )
+    score = anchor_score(score, evidenced=len(evidence), missing_count=len(missing))
 
     # Lead with the skills the posting actually asks for. The model still
     # over-claims matches; ordering puts the defensible ones first, and the

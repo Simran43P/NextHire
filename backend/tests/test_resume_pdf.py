@@ -12,6 +12,36 @@ import pymupdf
 import resume_pdf
 
 
+class TestSanitise:
+    """
+    Base-14 fonts cannot draw typographic characters, and a model emits them
+    freely. Left alone they come out as replacement glyphs - a cover letter
+    reading "Zoho<?>s team" looks like broken software.
+    """
+
+    def test_smart_quotes_and_dashes_become_ascii(self):
+        text = resume_pdf.extract_text(
+            resume_pdf.render_letter("Zoho’s team — “quoted”… ok.")
+        )
+        assert text == "Zoho's team - \"quoted\"... ok."
+        assert "�" not in text
+
+    def test_undrawable_characters_are_dropped_not_boxed(self):
+        # A missing character reads as a typo; a replacement box reads as a bug.
+        text = resume_pdf.extract_text(resume_pdf.render_letter("Hello 世界 world"))
+        assert "�" not in text
+        assert "Hello" in text and "world" in text
+
+    def test_bullets_render_without_a_typographic_glyph(self):
+        profile = {
+            "name": "Asha",
+            "experience": [{"company": "Zeta", "responsibilities": ["Did a thing"]}],
+        }
+        text = resume_pdf.extract_text(resume_pdf.render(profile))
+        assert "- Did a thing" in text
+        assert "�" not in text
+
+
 class TestRender:
     def test_the_output_is_a_pdf(self, sample_profile):
         assert resume_pdf.render(sample_profile).startswith(b"%PDF-")

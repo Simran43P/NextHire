@@ -13,7 +13,8 @@ the constraints here are deliberate and all of them cost visual flair:
   mangling starts.
 - **Standard uppercase section headings.** Parsers look for EXPERIENCE,
   EDUCATION, SKILLS. A heading called "Where I've Been" is invisible to them.
-- **Bullets as a literal character plus text**, not as list markup.
+- **Bullets as a plain hyphen plus text**, not as list markup and not as a
+  typographic bullet, which base-14 fonts cannot draw.
 
 The output is verified by re-extracting it: if PyMuPDF cannot read the text
 back out, neither can an ATS.
@@ -68,7 +69,7 @@ class _Canvas:
         font = BOLD_FONT if bold else BODY_FONT
         width = CONTENT_WIDTH - indent
 
-        for line in _wrap(content.strip(), font, size, width):
+        for line in _wrap(sanitise(content).strip(), font, size, width):
             self._ensure_space(LINE_HEIGHT)
             self.page.insert_text(
                 (MARGIN + indent, self.y + size),
@@ -104,10 +105,10 @@ class _Canvas:
         if not content.strip():
             return
         font, size = BODY_FONT, BODY_SIZE
-        lines = _wrap(content.strip(), font, size, CONTENT_WIDTH - 12)
+        lines = _wrap(sanitise(content).strip(), font, size, CONTENT_WIDTH - 12)
         for index, line in enumerate(lines):
             self._ensure_space(LINE_HEIGHT)
-            prefix = "• " if index == 0 else "  "
+            prefix = "- " if index == 0 else "  "
             self.page.insert_text(
                 (MARGIN + (0 if index == 0 else 12), self.y + size),
                 f"{prefix}{line}" if index == 0 else line,
@@ -121,6 +122,34 @@ class _Canvas:
 
     def close(self) -> None:
         self.document.close()
+
+
+# Typographic characters a model emits freely and a base-14 font cannot draw.
+# Left alone they come out as replacement glyphs - a cover letter reading
+# "Zoho<?>s team" is worse than one with a straight apostrophe.
+_TYPOGRAPHIC = str.maketrans(
+    {
+        "‘": "'", "’": "'", "‚": "'", "‛": "'",
+        "“": '"', "”": '"', "„": '"', "‟": '"',
+        "–": "-", "—": "-", "‒": "-", "―": "-",
+        "…": "...", "•": "-", "·": "-",
+        " ": " ", " ": " ", " ": " ", "​": "",
+        "′": "'", "″": '"', "«": '"', "»": '"',
+    }
+)
+
+
+def sanitise(text: str) -> str:
+    """
+    Make text drawable by a base-14 font.
+
+    Smart quotes and dashes are folded to their ASCII equivalents; anything
+    still outside Latin-1 is dropped rather than drawn as a replacement box,
+    because a missing character reads as a typo and a box reads as broken
+    software.
+    """
+    folded = (text or "").translate(_TYPOGRAPHIC)
+    return "".join(char for char in folded if char == "\n" or ord(char) < 256)
 
 
 def _wrap(text: str, font: str, size: float, width: float) -> list[str]:
@@ -258,6 +287,27 @@ def render(profile: dict[str, Any]) -> bytes:
         if languages:
             canvas.heading("Languages")
             canvas.text(", ".join(languages))
+
+        return canvas.to_bytes()
+    finally:
+        canvas.close()
+
+
+def render_letter(content: str, *, name: str = "") -> bytes:
+    """
+    Render a cover letter as a plain PDF.
+
+    Same constraints as the resume and for the same reason: many employers run
+    the letter through the same parser, and a letter that arrives as unreadable
+    glyphs is worse than no letter.
+    """
+    canvas = _Canvas()
+    try:
+        if name.strip():
+            canvas.text(name.strip(), size=NAME_SIZE - 3, bold=True, gap=6)
+
+        for paragraph in (content or "").split("\n\n"):
+            canvas.text(paragraph.strip(), gap=8)
 
         return canvas.to_bytes()
     finally:

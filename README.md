@@ -20,7 +20,9 @@ Upload PDF  →  Structured profile  →  Review & correct  →  Job titles
                                                                ↓
                        ATS analysis  ←  Pick up to 5  ←  Live job postings
                             ↓
-                   Tailored resume  →  ATS-safe PDF
+       Tailored resume · Cover letter · Interview prep  →  ATS-safe PDF
+                            ↓
+                  Application tracker · Skills gap
 ```
 
 You can run all of it **without an account**. Signing in is what makes the
@@ -154,7 +156,7 @@ cd backend
 python -m pytest
 ```
 
-201 tests. The model and every external API are mocked, so the suite runs
+330 tests. The model and every external API are mocked, so the suite runs
 offline in under two seconds and spends no quota.
 
 ```bash
@@ -203,6 +205,9 @@ backend/
   optimizer.py      Analysis -> reviewable tailoring edits
   fabrication.py    Blocks any generated claim the profile does not support
   resume_pdf.py     ATS-safe PDF rendering
+  cover_letter.py   Cover letters, with unsupported claims located per sentence
+  interview.py      Technical, behavioural and gap-probing questions
+  gap.py            Skills gap across every analysis - arithmetic, no model call
   models.py         13 tables: users, resumes, profiles, jobs, analyses...
   db.py             Async engine; WAL and foreign keys turned on
   auth.py           Argon2id passwords, server-side sessions, ownership guards
@@ -268,6 +273,13 @@ used it.
 It catches real cases. Asked to tailor a Python/React resume for a Java role,
 the model wrote a summary describing the candidate as having "a strong
 foundation in Java". That suggestion never reached the screen.
+
+The same check runs on cover letters, but it cannot work the same way: a letter
+is one piece of prose, and discarding it over one sentence would leave you with
+nothing. So the offending sentences are located and shown, and the letter stays
+editable. The employer's name and the role title count as known facts - naming
+the company you are writing to is not a claim about yourself, and a warning that
+fired on every letter's opening line would bury the ones that matter.
 
 Tailoring also refuses to pretend. On a posting the candidate genuinely fits,
 re-scoring the tailored version moved 80% to 85%. On a Java role they do not

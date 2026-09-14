@@ -306,6 +306,39 @@ class CoverLetter(Base, TimestampMixin):
     )
     tone: Mapped[str] = mapped_column(String(40), default="professional", nullable=False)
     content: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Sentences making claims the profile does not support. Stored alongside
+    # the letter so a saved draft still shows what needs checking, rather than
+    # the warning existing only in the tab that generated it.
+    unsupported_claims: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
+class InterviewPrep(Base, TimestampMixin):
+    """
+    Generated interview questions for one posting.
+
+    Cached rather than regenerated because the questions are a pure function of
+    the profile and the posting, and nobody wants to wait thirty seconds twice
+    for the same list.
+    """
+
+    __tablename__ = "interview_preps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    job_id: Mapped[int] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    profile_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    questions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    model: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_id", "job_id", "profile_version", name="uq_interview_cache_key"
+        ),
+    )
 
 
 class Application(Base, TimestampMixin):
