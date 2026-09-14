@@ -66,13 +66,25 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt
 
 cd backend
-alembic upgrade head      # create the database
 uvicorn main:app --reload
 ```
 
 Runs on http://localhost:8000. The database is a single SQLite file
 (`backend/nexthire.db`) and uploaded resumes live in `backend/storage/`; both
-are gitignored. Check it with http://localhost:8000/api/health.
+are gitignored.
+
+**Migrations run themselves on startup**, so there is no separate step to
+forget and no state where the code has moved on and the database has not. A
+database built by an older version of the app - one with tables but no
+migration history - is adopted rather than rebuilt. To drive Alembic by hand
+anyway:
+
+```bash
+cd backend
+alembic current            # what the database is at
+alembic upgrade head       # apply anything outstanding
+alembic revision --autogenerate -m "what changed"
+``` Check it with http://localhost:8000/api/health.
 
 ### 4. Frontend
 

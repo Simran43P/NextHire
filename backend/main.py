@@ -35,7 +35,9 @@ async def lifespan(app: FastAPI):
     if config.USE_MOCK_JOBS and config.RAPIDAPI_KEY is None:
         print("[startup] No RAPIDAPI_KEY set - job search will serve sample postings.")
 
-    await database.create_all()
+    # Migrations run on startup so the app is always self-consistent - there is
+    # no state where the code has moved on and the database has not.
+    await database.ensure_schema()
     await tasks.start_workers()
 
     yield
