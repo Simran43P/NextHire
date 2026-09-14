@@ -74,15 +74,16 @@ export async function applyChanges(
  * Fetched as a blob and saved from memory rather than linked to directly: the
  * stored route needs the session cookie, and a plain anchor would not send it.
  */
-export async function downloadPdf({ profile, tailoredResumeId }) {
+export async function downloadPdf({ profile, tailoredResumeId, template = null }) {
+  const query = template ? `?template=${encodeURIComponent(template)}` : "";
   const response = tailoredResumeId
-    ? await fetch(`${API_BASE_URL}/tailored-resumes/${tailoredResumeId}/pdf`, {
+    ? await fetch(`${API_BASE_URL}/tailored-resumes/${tailoredResumeId}/pdf${query}`, {
         credentials: "include",
       })
     : await fetch(`${API_BASE_URL}/optimize/pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile }),
+        body: JSON.stringify({ profile, template }),
         credentials: "include",
       });
 
@@ -106,6 +107,14 @@ function filenameFrom(response) {
   const header = response.headers.get("content-disposition") ?? "";
   const match = header.match(/filename="?([^"]+)"?/);
   return match ? match[1] : null;
+}
+
+/** The ATS-safe templates on offer. They differ in density, not in safety. */
+export function listTemplates(options = {}) {
+  return getJson("/templates", options).then((data) => ({
+    templates: data.templates ?? [],
+    default: data.default ?? "classic",
+  }));
 }
 
 /** Tailored resumes this account has already produced, newest first. */

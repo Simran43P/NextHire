@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+import resources
 from ats_matcher import anchor_score
 
 # Below this, a "gap" is one posting's idiosyncratic ask rather than a pattern
@@ -90,6 +91,9 @@ def analyse_gaps(analyses: list[dict[str, Any]], *, top_n: int = TOP_N) -> dict[
                 # a skill missing from one posting in ten does not lift the
                 # average by as much as one missing from nine.
                 "average_lift": round(bucket["total_lift"] / total, 1),
+                # Official docs where the skill is one we curate, and a search
+                # otherwise. Never a guessed tutorial URL.
+                "resources": resources.for_skill(_display_name(bucket["variants"])),
                 "postings": bucket["postings"],
             }
         )

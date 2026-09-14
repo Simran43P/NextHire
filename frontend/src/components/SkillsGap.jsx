@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Target, TrendingUp } from "lucide-react";
+import { BookOpen, ExternalLink, Loader2, Target, TrendingUp } from "lucide-react";
 import { fetchSkillsGap } from "../api/tracker";
 import ErrorNotice from "./ui/ErrorNotice";
 
@@ -120,6 +120,28 @@ export default function SkillsGap() {
                 <div className="text-[11px] text-slate-400">est. avg points</div>
               </div>
             </div>
+
+            {gap.resources?.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <BookOpen className="w-3.5 h-3.5 text-slate-300" />
+                {gap.resources.map((resource) => (
+                  <a
+                    key={resource.url}
+                    href={resource.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors ${
+                      resource.kind === "docs"
+                        ? "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {resource.label}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                ))}
+              </div>
+            )}
 
             <button
               onClick={() => setExpanded(expanded === gap.skill ? null : gap.skill)}

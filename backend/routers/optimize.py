@@ -64,6 +64,7 @@ class ApplyRequest(BaseModel):
 
 class RenderRequest(BaseModel):
     profile: dict[str, Any]
+    template: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -344,8 +345,10 @@ async def apply(
     }
 
 
-def _pdf_response(profile: dict[str, Any], filename: str) -> Response:
-    content = resume_pdf.render(profile)
+def _pdf_response(
+    profile: dict[str, Any], filename: str, template: str | None = None
+) -> Response:
+    content = resume_pdf.render(profile, template)
     return Response(
         content=content,
         media_type="application/pdf",
@@ -365,7 +368,7 @@ async def render_pdf(payload: RenderRequest):
     """Render any profile to an ATS-safe PDF. Used by guests, who store nothing."""
     if not payload.profile:
         raise errors.bad_request("missing_profile", "A resume profile is required.")
-    return _pdf_response(payload.profile, _filename(payload.profile))
+    return _pdf_response(payload.profile, _filename(payload.profile), payload.template)
 
 
 @router.get("/tailored-resumes")
@@ -439,13 +442,33 @@ async def get_tailored(
     }
 
 
+@router.get("/templates")
+async def list_templates():
+    """
+    The resume templates on offer.
+
+    They differ in density and ornament only. Single column, base-14 fonts, no
+    images and standard headings are not choices - those are the things a
+    parser depends on.
+    """
+    return {
+        "status": "success",
+        "default": resume_pdf.DEFAULT_TEMPLATE,
+        "templates": [
+            {"key": style.key, "label": style.label, "description": style.description}
+            for style in resume_pdf.TEMPLATES.values()
+        ],
+    }
+
+
 @router.get("/tailored-resumes/{tailored_id}/pdf")
 async def download_tailored(
     tailored_id: int,
+    template: str | None = Query(default=None),
     user: User = Depends(auth.current_user),
     db: AsyncSession = Depends(get_db),
 ):
     row = await _owned_tailored(db, tailored_id, user.id)
     if row is None:
         raise auth.forbidden()
-    return _pdf_response(row.tailored_profile, _filename(row.tailored_profile))
+    return _pdf_response(row.tailored_profile, _filename(row.tailored_profile), template)

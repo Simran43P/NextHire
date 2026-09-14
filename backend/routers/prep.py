@@ -50,6 +50,7 @@ class SaveCoverLetterRequest(BaseModel):
 class RenderLetterRequest(BaseModel):
     content: str
     name: str = ""
+    template: str | None = None
 
 
 class InterviewRequest(BaseModel):
@@ -358,7 +359,9 @@ async def render_cover_letter(payload: RenderLetterRequest):
     """Render a letter as a plain, parseable PDF."""
     if not payload.content.strip():
         raise errors.bad_request("empty_letter", "There is nothing to export yet.")
-    content = resume_pdf.render_letter(payload.content, name=payload.name)
+    content = resume_pdf.render_letter(
+        payload.content, name=payload.name, template=payload.template
+    )
     return Response(
         content=content,
         media_type="application/pdf",

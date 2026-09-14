@@ -1,17 +1,33 @@
-import { useState } from "react";
-import { ArrowLeft, MapPin, Sparkles, Tag } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowLeft, MapPin, Search, Sparkles, Tag, X } from "lucide-react";
 import { MAX_JOB_SELECTIONS } from "../api/pipeline";
 import { WarningNotice } from "./ui/ErrorNotice";
 
 /**
  * The postings found for the selected titles.
  *
- * There is no mock-data switch in this component any more. It used to carry a
- * hardcoded `USE_MOCK_DATA = true`, which meant live results were fetched and
- * then thrown away. Sample data is now a backend mode, decided by env config -
- * which is also where it belongs, because the backend is what spends the API
- * quota. This component renders whatever the server actually returned.
+ * There is no mock-data switch in this component. It used to carry a hardcoded
+ * `USE_MOCK_DATA = true`, which meant live results were fetched and then thrown
+ * away. Sample data is a backend mode now, decided by env config - which is
+ * also where it belongs, because the backend is what spends the API quota.
+ *
+ * Filtering and sorting happen here rather than in another search: the results
+ * are already in memory, and a second aggregator call to hide remote jobs would
+ * spend quota to show the candidate less.
  */
+
+const SORTS = [
+  { key: "match", label: "Best skill overlap" },
+  { key: "recent", label: "Most recent" },
+  { key: "salary", label: "Highest salary" },
+];
+
+const POSTED_WINDOWS = [
+  { key: "any", label: "Any time", days: null },
+  { key: "week", label: "Past week", days: 7 },
+  { key: "fortnight", label: "Past 2 weeks", days: 14 },
+  { key: "month", label: "Past month", days: 30 },
+];
 
 function formatSalary(salary) {
   if (!salary || typeof salary !== "object") return null;
@@ -40,6 +56,13 @@ function formatPostedAt(value) {
   if (days < 7) return `${days} days ago`;
   if (days < 30) return `${Math.floor(days / 7)} week${days < 14 ? "" : "s"} ago`;
   return `${Math.floor(days / 30)} month${days < 60 ? "" : "s"} ago`;
+}
+
+function daysOld(value) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const posted = new Date(value);
+  if (Number.isNaN(posted.getTime())) return Number.POSITIVE_INFINITY;
+  return (Date.now() - posted.getTime()) / 86400000;
 }
 
 function JobCard({ job, isSelected, isCapped, onToggle, onView }) {
@@ -144,6 +167,92 @@ function JobCard({ job, isSelected, isCapped, onToggle, onView }) {
   );
 }
 
+function FilterBar({ filters, setFilters, types, total, shown }) {
+  const update = (changes) => setFilters((previous) => ({ ...previous, ...changes }));
+  const isFiltered = shown !== total;
+
+  return (
+    <div className="mt-8 rounded-2xl border border-slate-100 bg-white p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[12rem]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+          <input
+            value={filters.query}
+            onChange={(event) => update({ query: event.target.value })}
+            placeholder="Filter by title or company"
+            className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2 text-sm outline-none focus:border-blue-400"
+          />
+        </div>
+
+        <select
+          value={filters.remote}
+          onChange={(event) => update({ remote: event.target.value })}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400"
+        >
+          <option value="any">Anywhere</option>
+          <option value="remote">Remote only</option>
+          <option value="onsite">On-site only</option>
+        </select>
+
+        <select
+          value={filters.type}
+          onChange={(event) => update({ type: event.target.value })}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400"
+        >
+          <option value="any">Any type</option>
+          {types.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filters.posted}
+          onChange={(event) => update({ posted: event.target.value })}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400"
+        >
+          {POSTED_WINDOWS.map((window) => (
+            <option key={window.key} value={window.key}>
+              {window.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filters.sort}
+          onChange={(event) => update({ sort: event.target.value })}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400"
+        >
+          {SORTS.map((sort) => (
+            <option key={sort.key} value={sort.key}>
+              Sort: {sort.label}
+            </option>
+          ))}
+        </select>
+
+        {isFiltered && (
+          <button
+            onClick={() =>
+              setFilters({ query: "", remote: "any", type: "any", posted: "any", sort: "match" })
+            }
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800"
+          >
+            <X className="w-3.5 h-3.5" />
+            Clear
+          </button>
+        )}
+      </div>
+
+      {isFiltered && (
+        <p className="text-xs text-slate-400 mt-3">
+          Showing {shown} of {total} postings.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function JobListings({
   jobs = [],
   warnings = [],
@@ -152,6 +261,46 @@ export default function JobListings({
   onBack,
 }) {
   const [selected, setSelected] = useState([]);
+  const [filters, setFilters] = useState({
+    query: "",
+    remote: "any",
+    type: "any",
+    posted: "any",
+    sort: "match",
+  });
+
+  const types = useMemo(
+    () => [...new Set(jobs.map((job) => job.type).filter(Boolean))].sort(),
+    [jobs]
+  );
+
+  const visible = useMemo(() => {
+    const query = filters.query.trim().toLowerCase();
+    const window = POSTED_WINDOWS.find((entry) => entry.key === filters.posted);
+
+    const filtered = jobs.filter((job) => {
+      if (query) {
+        const haystack = `${job.title} ${job.company} ${job.location}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      if (filters.remote === "remote" && !job.is_remote) return false;
+      if (filters.remote === "onsite" && job.is_remote) return false;
+      if (filters.type !== "any" && job.type !== filters.type) return false;
+      if (window?.days && daysOld(job.posted_at) > window.days) return false;
+      return true;
+    });
+
+    const sorted = [...filtered];
+    if (filters.sort === "recent") {
+      sorted.sort((a, b) => daysOld(a.posted_at) - daysOld(b.posted_at));
+    } else if (filters.sort === "salary") {
+      const value = (job) => job.salary?.max ?? job.salary?.min ?? -1;
+      sorted.sort((a, b) => value(b) - value(a));
+    } else {
+      sorted.sort((a, b) => (b.keyword_matches ?? 0) - (a.keyword_matches ?? 0));
+    }
+    return sorted;
+  }, [jobs, filters]);
 
   const toggleRole = (job) =>
     setSelected((previous) => {
@@ -220,9 +369,7 @@ export default function JobListings({
 
         {jobs.length === 0 ? (
           <div className="mt-10 rounded-2xl border border-slate-100 bg-white p-10 text-center">
-            <p className="text-slate-500">
-              No postings came back for those titles.
-            </p>
+            <p className="text-slate-500">No postings came back for those titles.</p>
             {onBack && (
               <button
                 onClick={onBack}
@@ -233,18 +380,36 @@ export default function JobListings({
             )}
           </div>
         ) : (
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {jobs.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                isSelected={selected.some((item) => item.id === job.id)}
-                isCapped={isCapped}
-                onToggle={toggleRole}
-                onView={handleView}
-              />
-            ))}
-          </div>
+          <>
+            <FilterBar
+              filters={filters}
+              setFilters={setFilters}
+              types={types}
+              total={jobs.length}
+              shown={visible.length}
+            />
+
+            {visible.length === 0 ? (
+              <div className="mt-6 rounded-2xl border border-slate-100 bg-white p-10 text-center">
+                <p className="text-slate-500">
+                  Nothing matches those filters. Try widening them.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {visible.map((job) => (
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    isSelected={selected.some((item) => item.id === job.id)}
+                    isCapped={isCapped}
+                    onToggle={toggleRole}
+                    onView={handleView}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
 

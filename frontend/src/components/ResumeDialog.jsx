@@ -1,5 +1,11 @@
-import { useRef, useState } from "react";
-import { MAX_UPLOAD_MB, parseResume, validateResumeFile } from "../api/pipeline";
+import { useEffect, useRef, useState } from "react";
+import { FileClock } from "lucide-react";
+import {
+  MAX_UPLOAD_MB,
+  listProfiles,
+  parseResume,
+  validateResumeFile,
+} from "../api/pipeline";
 import ErrorNotice from "./ui/ErrorNotice";
 import StageProgress from "./ui/StageProgress";
 
@@ -15,13 +21,37 @@ const STAGES = [
  * model call. They are shown as separate stages because conflating them into
  * one spinner makes a working minute-long extraction look like a hang.
  */
-export default function ResumeDialog({ showDialog, onClose, onParsed, background = false }) {
+export default function ResumeDialog({
+  showDialog,
+  onClose,
+  onParsed,
+  onUseExisting,
+  background = false,
+  isAuthenticated = false,
+}) {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState(null);
   const [stage, setStage] = useState(null); // null | "upload" | "extract"
   const [uploadPercent, setUploadPercent] = useState(0);
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
+  // Resumes already uploaded. Without this the endpoint exists but old
+  // resumes are unreachable, and the only way back to one is to upload it
+  // again and wait out another extraction.
+  const [saved, setSaved] = useState([]);
+
+  useEffect(() => {
+    if (!showDialog || !isAuthenticated) return undefined;
+    let cancelled = false;
+    listProfiles()
+      .then((profiles) => {
+        if (!cancelled) setSaved(profiles);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [showDialog, isAuthenticated]);
 
   if (!showDialog) return null;
 
@@ -147,7 +177,7 @@ export default function ResumeDialog({ showDialog, onClose, onParsed, background
                   fontWeight="700"
                   fill="#4338CA"
                 >
-                  PDF
+                  CV
                 </text>
                 <path
                   d="M12 17v4m0 0l-2-2m2 2l2-2"
@@ -160,10 +190,10 @@ export default function ResumeDialog({ showDialog, onClose, onParsed, background
             </div>
 
             <p className="text-lg sm:text-xl font-semibold text-slate-900">
-              Drag &amp; drop your PDF resume here
+              Drag &amp; drop your resume here
             </p>
             <p className="text-xs sm:text-sm text-slate-500 mt-1 mb-5 sm:mb-6">
-              {file ? file.name : `(PDF files only, max ${MAX_UPLOAD_MB}MB)`}
+              {file ? file.name : `(PDF or Word .docx, max ${MAX_UPLOAD_MB}MB)`}
             </p>
 
             <button
@@ -176,10 +206,46 @@ export default function ResumeDialog({ showDialog, onClose, onParsed, background
             <input
               ref={inputRef}
               type="file"
-              accept="application/pdf"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               className="hidden"
               onChange={(event) => chooseFile(event.target.files?.[0])}
             />
+          </div>
+        )}
+
+        {!isBusy && saved.length > 0 && (
+          <div className="mt-6">
+            <div className="flex items-center gap-2 mb-2">
+              <FileClock className="w-4 h-4 text-slate-300" />
+              <p className="text-xs font-medium text-slate-500">
+                Or pick up a resume you already uploaded
+              </p>
+            </div>
+            <div className="space-y-2 max-h-44 overflow-y-auto">
+              {saved.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  onClick={() => onUseExisting?.(profile.id)}
+                  className="w-full flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-left hover:border-slate-300 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">
+                      {profile.name || "Untitled resume"}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {profile.skill_count} skill{profile.skill_count === 1 ? "" : "s"}
+                      {profile.created_at
+                        ? ` \u00b7 ${new Date(profile.created_at).toLocaleDateString()}`
+                        : ""}
+                    </p>
+                  </div>
+                  <span className="flex-shrink-0 text-xs font-semibold text-blue-600">
+                    Use this
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

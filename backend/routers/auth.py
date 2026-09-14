@@ -63,6 +63,10 @@ def _public_user(user: User) -> dict[str, Any]:
         "email": user.email,
         "display_name": user.display_name,
         "created_at": user.created_at.isoformat() if user.created_at else None,
+        # The UI needs this to know whether account deletion asks for a
+        # password or for the email address.
+        "has_password": bool(user.password_hash),
+        "oauth_provider": user.oauth_provider,
     }
 
 

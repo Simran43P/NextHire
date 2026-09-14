@@ -16,13 +16,14 @@ from __future__ import annotations
 
 from typing import Any
 
-import pymupdf
+
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import auth
 import config
+import documents
 import errors
 import llm
 import persistence
@@ -154,20 +155,22 @@ async def _read_upload_within_limit(file: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
-def _extract_text(content: bytes) -> str:
+def _extract_text(content: bytes) -> tuple[str, str]:
+    """Pull text out of a PDF or DOCX, or explain why it could not be done."""
     try:
-        with pymupdf.open(stream=content, filetype="pdf") as document:
-            pages = [
-                document.load_page(index).get_text("text")
-                for index in range(len(document))
-            ]
-    except Exception as exc:
-        print(f"[parse] could not read PDF: {exc}")
+        return documents.extract_text(content)
+    except documents.UnsupportedDocument:
         raise errors.bad_request(
-            "unreadable_pdf",
-            "This PDF could not be read. It may be corrupted or password protected.",
+            "unsupported_format",
+            "That does not look like a PDF or Word document. "
+            "Only PDF and DOCX resumes are supported.",
         )
-    return "\n".join(pages).strip()
+    except documents.UnreadableDocument as exc:
+        print(f"[parse] could not read document: {exc}")
+        raise errors.bad_request(
+            "unreadable_document",
+            "This file could not be read. It may be corrupted or password protected.",
+        )
 
 
 @router.post("/parse-resume")
@@ -178,7 +181,7 @@ async def parse_resume(
     user: User | None = Depends(auth.optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Extract text from an uploaded PDF and turn it into a structured profile."""
+    """Extract text from an uploaded PDF or DOCX and turn it into a structured profile."""
     ratelimit.check(
         request,
         "upload",
@@ -191,27 +194,28 @@ async def parse_resume(
     if not content:
         raise errors.bad_request("empty_file", "That file is empty.")
 
-    # Validate by content, not by filename. An extension proves nothing.
-    if not content.startswith(b"%PDF-"):
-        raise errors.bad_request(
-            "not_a_pdf",
-            "That does not look like a PDF file. Only PDF resumes are supported.",
-        )
-
-    extracted_text = _extract_text(content)
+    # Format is decided by the bytes, never by the filename. An extension is
+    # attacker-controlled input and proves nothing about what the file is.
+    extracted_text, kind = _extract_text(content)
 
     # A scanned or image-only resume extracts to almost nothing. Sending that to
     # the model produces a confidently empty profile, which is worse than an error.
     if len(extracted_text) < config.MIN_RESUME_CHARS:
         raise errors.bad_request(
-            "no_text_in_pdf",
-            "No readable text was found in this PDF. It looks like a scan or an "
-            "image. Please upload a text-based PDF resume.",
+            "no_text_in_document",
+            "No readable text was found in this file. "
+            + (
+                "It looks like a scan or an image. Please upload a text-based PDF."
+                if kind == "pdf"
+                else "The document appears to be empty."
+            ),
         )
 
     storage_key = ""
     if user is not None:
-        storage_key = await storage.save_resume(user.id, content)
+        storage_key = await storage.save_resume(
+            user.id, content, ".docx" if kind == "docx" else ".pdf"
+        )
 
     if user is not None and background:
         task = await tasks.enqueue(
@@ -373,10 +377,15 @@ async def download_resume(
     if content is None:
         raise errors.not_found("That file is no longer on disk.")
 
-    filename = resume.original_filename or "resume.pdf"
+    is_docx = (resume.storage_key or "").endswith(".docx")
+    filename = resume.original_filename or ("resume.docx" if is_docx else "resume.pdf")
     return FileResponse(
         content=content,
-        media_type="application/pdf",
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            if is_docx
+            else "application/pdf"
+        ),
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

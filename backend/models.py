@@ -62,8 +62,16 @@ class User(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Null for an account that only ever signed in with Google. Such an account
+    # has no password to verify, which changes how deletion is confirmed.
+    password_hash: Mapped[str | None] = mapped_column(String(255), default=None)
     display_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    oauth_provider: Mapped[str | None] = mapped_column(String(40), default=None)
+    # The provider's stable user id. Matching on this rather than on email means
+    # a user who changes their Google address keeps their account.
+    oauth_subject: Mapped[str | None] = mapped_column(
+        String(255), index=True, default=None
+    )
 
     sessions: Mapped[list[Session]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

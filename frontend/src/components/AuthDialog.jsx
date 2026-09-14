@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Sparkles, X } from "lucide-react";
+import { API_BASE_URL, getJson } from "../api/client";
 import { requestPasswordReset } from "../api/account";
 import { useAuth } from "../auth/context";
 import ErrorNotice from "./ui/ErrorNotice";
@@ -38,6 +39,21 @@ export default function AuthDialog({ open, onClose, initialMode = "signin", carr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  // Google sign-in needs credentials only the deployer can create, so the
+  // button appears only when the server says it is actually configured.
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getJson("/auth/google/status")
+      .then((data) => {
+        if (!cancelled) setGoogleEnabled(Boolean(data.enabled));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!open) return null;
 
@@ -108,6 +124,41 @@ export default function AuthDialog({ open, onClose, initialMode = "signin", carr
               not need to upload it again.
             </p>
           </div>
+        )}
+
+        {googleEnabled && mode !== "forgot" && (
+          <>
+            <a
+              href={`${API_BASE_URL}/auth/google/start`}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="#4285F4"
+                  d="M21.6 12.2c0-.6-.1-1.3-.2-1.9H12v3.6h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.2z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 22c2.7 0 4.9-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M6.4 14c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.4H3.1a10 10 0 0 0 0 9.2L6.4 14z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.8-2.8C16.9 2.9 14.7 2 12 2a10 10 0 0 0-8.9 5.4L6.4 10c.8-2.3 3-4.1 5.6-4.1z"
+                />
+              </svg>
+              Continue with Google
+            </a>
+
+            <div className="flex items-center gap-3 my-5">
+              <span className="h-px flex-1 bg-slate-100" />
+              <span className="text-xs text-slate-400">or</span>
+              <span className="h-px flex-1 bg-slate-100" />
+            </div>
+          </>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">

@@ -165,3 +165,83 @@ class TestRender:
             }
         # Body text and bullet continuations only; nothing near the page centre.
         assert max(lefts) < 100, lefts
+
+
+class TestTemplates:
+    """
+    Templates change density and ornament. What a parser depends on - one
+    column, base-14 fonts, no images, standard headings - is not a choice, so
+    every template has to satisfy the same checks.
+    """
+
+    def test_every_template_renders_readable_text(self, sample_profile):
+        for key in resume_pdf.TEMPLATES:
+            text = resume_pdf.extract_text(resume_pdf.render(sample_profile, key))
+            assert "Asha Menon" in text, key
+            assert "SKILLS" in text, key
+
+    def test_every_template_stays_base_14_and_image_free(self, sample_profile):
+        for key in resume_pdf.TEMPLATES:
+            with pymupdf.open(
+                stream=resume_pdf.render(sample_profile, key), filetype="pdf"
+            ) as doc:
+                for page in doc:
+                    assert page.get_images() == [], key
+                    for font in page.get_fonts():
+                        assert font[3].startswith("Helvetica"), (key, font)
+
+    def test_every_template_stays_single_column(self, sample_profile):
+        for key in resume_pdf.TEMPLATES:
+            with pymupdf.open(
+                stream=resume_pdf.render(sample_profile, key), filetype="pdf"
+            ) as doc:
+                lefts = {
+                    round(block[0])
+                    for page in doc
+                    for block in page.get_text("blocks")
+                    if block[4].strip()
+                }
+            assert max(lefts) < 100, (key, lefts)
+
+    def test_plain_draws_no_rules(self, sample_profile):
+        with pymupdf.open(
+            stream=resume_pdf.render(sample_profile, "plain"), filetype="pdf"
+        ) as doc:
+            assert sum(len(page.get_drawings()) for page in doc) == 0
+
+    def test_compact_fits_more_onto_a_page(self):
+        profile = {
+            "name": "Asha",
+            "experience": [
+                {
+                    "company": f"Company {index}",
+                    "designation": "Engineer",
+                    "duration": "2020-2024",
+                    "responsibilities": ["Did a considerable amount of work here"] * 5,
+                }
+                for index in range(9)
+            ],
+        }
+        with pymupdf.open(stream=resume_pdf.render(profile, "classic"), filetype="pdf") as a:
+            classic_pages = a.page_count
+        with pymupdf.open(stream=resume_pdf.render(profile, "compact"), filetype="pdf") as b:
+            compact_pages = b.page_count
+        assert compact_pages <= classic_pages
+
+    def test_an_unknown_template_falls_back_rather_than_failing(self, sample_profile):
+        assert resume_pdf.resolve_style("nonsense").key == resume_pdf.DEFAULT_TEMPLATE
+        assert resume_pdf.render(sample_profile, "nonsense").startswith(b"%PDF-")
+
+    def test_letters_accept_a_template_too(self):
+        for key in resume_pdf.TEMPLATES:
+            pdf = resume_pdf.render_letter("Dear team,\n\nI am applying.", template=key)
+            assert "I am applying." in resume_pdf.extract_text(pdf)
+
+
+class TestTemplateRoute:
+    def test_the_templates_are_listed(self, client):
+        body = client.get("/api/templates").json()
+        keys = {item["key"] for item in body["templates"]}
+        assert keys == set(resume_pdf.TEMPLATES)
+        assert body["default"] in keys
+        assert all(item["description"] for item in body["templates"])

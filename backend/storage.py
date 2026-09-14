@@ -43,10 +43,17 @@ def resolve(storage_key: str) -> Path:
     return candidate
 
 
-async def save_resume(user_id: int, content: bytes) -> str:
-    """Write a resume and return its storage key."""
+async def save_resume(user_id: int, content: bytes, extension: str = ".pdf") -> str:
+    """
+    Write a resume and return its storage key.
+
+    The extension comes from the detected format, not from the uploaded
+    filename - a DOCX stored as .pdf downloads as a file nothing can open.
+    """
+    if extension not in {".pdf", ".docx"}:
+        extension = ".pdf"
     directory = _user_dir(user_id)
-    key = f"user-{int(user_id)}/{secrets.token_urlsafe(24)}.pdf"
+    key = f"user-{int(user_id)}/{secrets.token_urlsafe(24)}{extension}"
     path = directory / Path(key).name
 
     def _write() -> None:

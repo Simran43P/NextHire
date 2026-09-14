@@ -45,7 +45,10 @@ def hash_password(password: str) -> str:
     return _hasher.hash(password)
 
 
-def verify_password(password_hash: str, password: str) -> bool:
+def verify_password(password_hash: str | None, password: str) -> bool:
+    """False for an account with no password at all - a Google-only sign-in."""
+    if not password_hash:
+        return False
     try:
         _hasher.verify(password_hash, password)
         return True
@@ -53,8 +56,10 @@ def verify_password(password_hash: str, password: str) -> bool:
         return False
 
 
-def needs_rehash(password_hash: str) -> bool:
+def needs_rehash(password_hash: str | None) -> bool:
     """True when the stored hash predates the current Argon2 parameters."""
+    if not password_hash:
+        return False
     try:
         return _hasher.check_needs_rehash(password_hash)
     except (InvalidHashError, ValueError):

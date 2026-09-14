@@ -32,9 +32,14 @@ export function validateResumeFile(file) {
     const mb = (file.size / 1024 / 1024).toFixed(1);
     return `That file is ${mb}MB. The limit is ${MAX_UPLOAD_MB}MB.`;
   }
-  const looksLikePdf =
-    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-  if (!looksLikePdf) return "Only PDF resumes are supported.";
+  const name = file.name.toLowerCase();
+  const looksSupported =
+    file.type === "application/pdf" ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.endsWith(".pdf") ||
+    name.endsWith(".docx");
+  if (!looksSupported) return "Only PDF and Word (.docx) resumes are supported.";
   return null;
 }
 

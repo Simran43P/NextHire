@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Brain, Check, Loader2, Target, X } from "lucide-react";
+import { ArrowRight, Brain, Check, Globe, Loader2, Plus, Target, X } from "lucide-react";
 import { MAX_TITLE_SELECTIONS, inferTitles, searchJobs } from "../api/pipeline";
+import { COUNTRIES, DEFAULT_COUNTRY } from "../api/countries";
 import ErrorNotice from "./ui/ErrorNotice";
 import StageProgress from "./ui/StageProgress";
 
@@ -53,10 +54,16 @@ function JobTitleRow({ job, isSelected, isDisabled, onToggle }) {
         </div>
       </div>
 
-      <span className="flex-shrink-0 inline-flex items-center gap-1 bg-green-50 text-green-600 border border-green-200 rounded-full px-3 py-1 text-xs font-medium ml-3">
-        <Target className="w-3 h-3" />
-        {job.matchPercentage}%
-      </span>
+      {job.matchPercentage === null || job.matchPercentage === undefined ? (
+        <span className="flex-shrink-0 inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 rounded-full px-3 py-1 text-xs font-medium ml-3">
+          Yours
+        </span>
+      ) : (
+        <span className="flex-shrink-0 inline-flex items-center gap-1 bg-green-50 text-green-600 border border-green-200 rounded-full px-3 py-1 text-xs font-medium ml-3">
+          <Target className="w-3 h-3" />
+          {job.matchPercentage}%
+        </span>
+      )}
     </div>
   );
 
@@ -83,6 +90,11 @@ export default function JobTitlesDialog({
   );
   // Bumped to re-run inference; the fetch itself lives entirely in the effect.
   const [reloadToken, setReloadToken] = useState(0);
+  const [country, setCountry] = useState(DEFAULT_COUNTRY);
+  // Titles the candidate adds. The model infers what a resume supports; it
+  // cannot know that someone is deliberately changing direction.
+  const [customTitles, setCustomTitles] = useState([]);
+  const [draftTitle, setDraftTitle] = useState("");
 
   useEffect(() => {
     if (!profile && !profileId) return undefined;
@@ -136,6 +148,36 @@ export default function JobTitlesDialog({
     setReloadToken((token) => token + 1);
   };
 
+  const allTitles = [...titles, ...customTitles];
+
+  const addCustomTitle = () => {
+    const value = draftTitle.trim();
+    if (!value) return;
+
+    const exists = allTitles.some(
+      (entry) => entry.title.toLowerCase() === value.toLowerCase()
+    );
+    if (exists) {
+      setDraftTitle("");
+      return;
+    }
+
+    const entry = {
+      id: `custom-${customTitles.length}`,
+      title: value,
+      // No confidence: the model did not infer this one, and showing a made-up
+      // percentage beside it would be the same lie the job cards used to tell.
+      matchPercentage: null,
+      reason: "Added by you",
+      custom: true,
+    };
+    setCustomTitles((previous) => [...previous, entry]);
+    setSelectedIds((previous) =>
+      previous.length < MAX_TITLE_SELECTIONS ? [...previous, entry.id] : previous
+    );
+    setDraftTitle("");
+  };
+
   const toggleSelection = useCallback((id) => {
     setSelectedIds((previous) => {
       if (previous.includes(id)) return previous.filter((item) => item !== id);
@@ -147,7 +189,7 @@ export default function JobTitlesDialog({
   const handleSearch = async () => {
     if (selectedIds.length === 0 || phase === "searching") return;
 
-    const selected = titles.filter((entry) =>
+    const selected = allTitles.filter((entry) =>
       selectedIds.includes(entry.id ?? entry.title)
     );
 
@@ -155,7 +197,7 @@ export default function JobTitlesDialog({
     setError(null);
 
     try {
-      const result = await searchJobs(selected, { profile, profileId });
+      const result = await searchJobs(selected, { profile, profileId, country });
       onJobsFound(result, selected);
     } catch (err) {
       // Previously a browser alert(), which blocked the page and offered no
@@ -227,9 +269,9 @@ export default function JobTitlesDialog({
               />
             )}
 
-            {titles.length > 0 && (
+            {allTitles.length > 0 && (
               <div className="flex flex-col gap-3">
-                {titles.map((job) => {
+                {allTitles.map((job) => {
                   const id = job.id ?? job.title;
                   const isSelected = selectedIds.includes(id);
                   return (
@@ -247,11 +289,54 @@ export default function JobTitlesDialog({
           </>
         )}
 
-        {!isBusy && titles.length > 0 && (
+        {!isBusy && (
+          <div className="flex gap-2 mt-4">
+            <input
+              value={draftTitle}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addCustomTitle();
+                }
+              }}
+              placeholder="Add a title of your own"
+              className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+            <button
+              type="button"
+              onClick={addCustomTitle}
+              disabled={!draftTitle.trim()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 text-white px-4 py-2.5 text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-40"
+            >
+              <Plus className="w-4 h-4" />
+              Add
+            </button>
+          </div>
+        )}
+
+        {!isBusy && allTitles.length > 0 && (
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-6">
-            <p className="text-xs text-slate-400">
-              {selectedIds.length}/{MAX_TITLE_SELECTIONS} selected
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-slate-400">
+                {selectedIds.length}/{MAX_TITLE_SELECTIONS} selected
+              </p>
+              <label className="inline-flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-slate-400" />
+                <span className="sr-only">Country to search</span>
+                <select
+                  value={country}
+                  onChange={(event) => setCountry(event.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none focus:border-blue-400"
+                >
+                  {COUNTRIES.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
             <button
               type="button"

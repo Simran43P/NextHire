@@ -26,7 +26,11 @@ router = APIRouter(prefix="/api/account", tags=["account"])
 class DeleteAccountRequest(BaseModel):
     # Re-authentication, because deletion is irreversible and a logged-in
     # browser someone walked away from should not be enough to trigger it.
-    password: str
+    password: str = ""
+    # An account created through Google has no password to re-enter, so it
+    # confirms by typing its own address instead. Something deliberate is still
+    # required; the point is proof of intent, not proof of a password.
+    confirm_email: str = ""
 
 
 @router.get("/export")
@@ -60,9 +64,15 @@ async def delete_account(
     are deleted first - an orphaned row is recoverable, an orphaned resume on
     disk is the thing that should not survive.
     """
-    if not auth.verify_password(user.password_hash, payload.password):
+    if user.password_hash:
+        if not auth.verify_password(user.password_hash, payload.password):
+            raise errors.bad_request(
+                "invalid_credentials", "That password is not right."
+            )
+    elif auth.normalise_email(payload.confirm_email) != user.email:
         raise errors.bad_request(
-            "invalid_credentials", "That password is not right."
+            "confirm_email_mismatch",
+            "Type your email address exactly to confirm deletion.",
         )
 
     user_id = user.id
@@ -86,6 +96,7 @@ async def limits(user: User | None = Depends(auth.optional_user)):
     return {
         "status": "success",
         "signed_in": user is not None,
+        "has_password": bool(user.password_hash) if user else False,
         "max_upload_mb": config.MAX_UPLOAD_MB,
         "uploads_per_hour": config.RATE_LIMIT_UPLOAD_PER_HOUR,
         "analyses_per_hour": config.RATE_LIMIT_INFERENCE_PER_HOUR,

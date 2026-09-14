@@ -4,6 +4,7 @@ import {
   Check,
   Loader2,
   ArrowRight,
+  Columns3,
   Quote,
   RefreshCw,
   Sparkles,
@@ -319,6 +320,106 @@ function AnalysisPanel({ job, state, onRetry, onOptimize, onCoverLetter, onInter
   );
 }
 
+/**
+ * Every analysed posting side by side.
+ *
+ * The per-job view answers "how do I do against this one". This answers the
+ * question a candidate actually has once five analyses are done: which of
+ * these is worth my evening.
+ */
+function ComparisonTable({ jobs, results, onOpen }) {
+  const rows = jobs.map((job) => ({ job, state: results[job.id] }));
+
+  return (
+    <div className="overflow-x-auto rounded-3xl border border-slate-100 bg-white shadow-md">
+      <table className="w-full min-w-[46rem] text-sm">
+        <thead>
+          <tr className="border-b border-slate-100 text-left">
+            <th className="px-5 py-3 font-semibold text-slate-700">Role</th>
+            <th className="px-5 py-3 font-semibold text-slate-700 w-24">Score</th>
+            <th className="px-5 py-3 font-semibold text-slate-700">Matched</th>
+            <th className="px-5 py-3 font-semibold text-slate-700">Missing</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ job, state }) => (
+            <tr
+              key={job.id}
+              onClick={() => onOpen(job.id)}
+              className="border-b border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50/70 transition-colors align-top"
+            >
+              <td className="px-5 py-4">
+                <p className="font-semibold text-slate-900">{job.title}</p>
+                <p className="text-xs text-slate-500">{job.company}</p>
+              </td>
+              <td className="px-5 py-4">
+                {state?.status === STATUS.done ? (
+                  <span
+                    className={`inline-block rounded-full px-2.5 py-1 text-sm font-semibold tabular-nums ${scoreColour(
+                      state.analysis.match_score
+                    )}`}
+                  >
+                    {state.analysis.match_score}%
+                  </span>
+                ) : state?.status === STATUS.error ? (
+                  <span className="text-xs text-red-600">Failed</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Running
+                  </span>
+                )}
+              </td>
+              <td className="px-5 py-4">
+                {state?.status === STATUS.done ? (
+                  <div className="flex flex-wrap gap-1">
+                    {state.analysis.matched_skills.slice(0, 6).map((skill) => (
+                      <span
+                        key={skill}
+                        className="rounded-full bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 text-xs"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                    {state.analysis.matched_skills.length > 6 && (
+                      <span className="text-xs text-slate-400 self-center">
+                        +{state.analysis.matched_skills.length - 6}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-300">-</span>
+                )}
+              </td>
+              <td className="px-5 py-4">
+                {state?.status === STATUS.done ? (
+                  state.analysis.missing_skills.length === 0 ? (
+                    <span className="text-xs text-slate-400">Nothing major</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {state.analysis.missing_skills.map((skill) => (
+                        <span
+                          key={skill}
+                          className="rounded-full bg-red-50 border border-red-200 text-red-700 px-2 py-0.5 text-xs"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  <span className="text-xs text-slate-300">-</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
 export default function ATSAnalysisDashboard({
   selectedJobs = [],
   resumeProfile,
@@ -334,6 +435,7 @@ export default function ATSAnalysisDashboard({
   const [jobs, setJobs] = useState(selectedJobs);
   const [selectedId, setSelectedId] = useState(selectedJobs[0]?.id ?? null);
   const [results, setResults] = useState({});
+  const [view, setView] = useState("detail"); // detail | compare
   const abortRef = useRef(new Map());
 
   const runAnalysis = useCallback(
@@ -478,6 +580,34 @@ export default function ATSAnalysisDashboard({
         )}
         {pending === 0 && failed === 0 && <div className="mb-10" />}
 
+        {jobs.length > 1 && (
+          <div className="flex justify-center gap-1 mb-8">
+            {[
+              ["detail", "One at a time"],
+              ["compare", "Compare all"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                  view === key
+                    ? "bg-slate-900 text-white"
+                    : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {key === "compare" && <Columns3 className="w-3.5 h-3.5" />}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {view === "compare" && jobs.length > 1 ? (
+          <ComparisonTable jobs={jobs} results={results} onOpen={(id) => {
+            setSelectedId(id);
+            setView("detail");
+          }} />
+        ) : (
         <div className="grid grid-cols-12 gap-8">
           <div className="col-span-12 md:col-span-5 lg:col-span-4">
             <h2 className="text-lg font-bold text-slate-900">Selected jobs</h2>
@@ -590,6 +720,7 @@ export default function ATSAnalysisDashboard({
             />
           </div>
         </div>
+        )}
       </div>
     </div>
   );

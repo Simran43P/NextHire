@@ -8,7 +8,7 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
-import { applyChanges, downloadPdf, proposeChanges } from "../api/optimize";
+import { applyChanges, downloadPdf, listTemplates, proposeChanges } from "../api/optimize";
 import ErrorNotice from "./ui/ErrorNotice";
 import StageProgress from "./ui/StageProgress";
 
@@ -191,7 +191,7 @@ function RejectedNotice({ rejected }) {
   );
 }
 
-function Result({ result, onDownload, downloading }) {
+function Result({ result, onDownload, downloading, templates, template, setTemplate }) {
   const delta =
     result.beforeScore !== null && result.beforeScore !== undefined
       ? result.afterScore - result.beforeScore
@@ -236,17 +236,37 @@ function Result({ result, onDownload, downloading }) {
         </p>
       )}
 
+      {templates.length > 1 && (
+        <div className="flex flex-wrap items-center justify-center gap-2 mt-7">
+          {templates.map((option) => (
+            <button
+              key={option.key}
+              onClick={() => setTemplate(option.key)}
+              title={option.description}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                template === option.key
+                  ? "bg-slate-900 text-white"
+                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <button
         onClick={onDownload}
         disabled={downloading}
-        className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-fuchsia-500 text-white px-7 py-3 text-sm font-medium shadow-lg shadow-purple-500/30 hover:opacity-90 transition-opacity mt-7 disabled:opacity-50"
+        className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-fuchsia-500 text-white px-7 py-3 text-sm font-medium shadow-lg shadow-purple-500/30 hover:opacity-90 transition-opacity mt-5 disabled:opacity-50"
       >
         <Download className="w-4 h-4" />
         {downloading ? "Building PDF..." : "Download tailored resume"}
       </button>
 
       <p className="text-xs text-slate-400 mt-3">
-        Single column, selectable text, standard headings - built to survive a parser.
+        Every template is single column with selectable text and standard headings.
+        They differ in density, never in what a parser can read.
       </p>
     </div>
   );
@@ -266,6 +286,8 @@ export default function ResumeOptimizer({
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [template, setTemplate] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const jobId = job?.job_id ?? null;
@@ -307,6 +329,20 @@ export default function ResumeOptimizer({
     };
   }, [profile, profileId, jobDescription, jobId, analysis, reloadToken]);
 
+  useEffect(() => {
+    let cancelled = false;
+    listTemplates()
+      .then((result) => {
+        if (cancelled) return;
+        setTemplates(result.templates);
+        setTemplate((current) => current ?? result.default);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const toggle = useCallback((id) => {
     setAcceptedIds((previous) =>
       previous.includes(id)
@@ -346,6 +382,7 @@ export default function ResumeOptimizer({
       await downloadPdf({
         profile: result.tailoredProfile,
         tailoredResumeId: result.tailoredResumeId,
+        template,
       });
     } catch (err) {
       setError(err);
@@ -419,7 +456,14 @@ export default function ResumeOptimizer({
         )}
 
         {phase === "done" && result && (
-          <Result result={result} onDownload={handleDownload} downloading={downloading} />
+          <Result
+            result={result}
+            onDownload={handleDownload}
+            downloading={downloading}
+            templates={templates}
+            template={template}
+            setTemplate={setTemplate}
+          />
         )}
 
         {phase === "review" && (

@@ -226,7 +226,7 @@ Requirements are identified as `FR-<module>-<n>` and carry a priority:
 | FR-ING-5 | P0 | A PDF that yields no extractable text (a scanned image) is rejected with an explanation, not passed to the model as an empty string. |
 | FR-ING-6 | P1 | The candidate sees staged progress — uploading, reading, analysing — rather than a single indefinite spinner, because extraction can take tens of seconds. |
 | FR-ING-7 | P1 | The uploaded file is validated as a real PDF by content, not by filename extension alone. |
-| FR-ING-8 | P2 | DOCX resumes are accepted and converted before extraction. |
+| FR-ING-8 | P2 | DOCX resumes are accepted and converted before extraction. *(Built — `documents.py`, detected by content)* |
 
 ### 5.2 M2 — Structured profile extraction  *(built)*
 
@@ -239,7 +239,7 @@ Requirements are identified as `FR-<module>-<n>` and carry a priority:
 | FR-PROF-5 | P0 | Multi-page resumes are not truncated. *(Built — `num_ctx: 8192`; must be re-verified if the model changes)* |
 | FR-PROF-6 | P1 | The candidate can review and correct the extracted profile before it is used downstream. Extraction is good, not perfect, and every later stage inherits its errors. |
 | FR-PROF-7 | P1 | A confidence or completeness indicator flags profiles where major sections came back empty. |
-| FR-PROF-8 | P2 | The candidate can maintain more than one profile (for example, one aimed at data roles and one at backend roles). |
+| FR-PROF-8 | P2 | The candidate can maintain more than one profile (for example, one aimed at data roles and one at backend roles). *(Built — stored resumes are reopenable from the upload dialog)* |
 
 ### 5.3 M3 — Job title inference  *(built)*
 
@@ -251,7 +251,7 @@ Requirements are identified as `FR-<module>-<n>` and carry a priority:
 | FR-TITLE-4 | P0 | Near-duplicate titles are collapsed, keeping the highest-confidence variant in its original position. *(Built)* |
 | FR-TITLE-5 | P0 | Malformed model output degrades to an empty list and a user-facing message, never an unhandled exception. *(Built)* |
 | FR-TITLE-6 | P0 | The candidate selects which titles to search, up to a cap of 5, with the cap and current count always visible. *(Built)* |
-| FR-TITLE-7 | P1 | The candidate can add a title of their own that the model did not infer. |
+| FR-TITLE-7 | P1 | The candidate can add a title of their own that the model did not infer. *(Built)* |
 | FR-TITLE-8 | P2 | Each title carries a one-line rationale — which skills or projects drove it. |
 
 ### 5.4 M4 — Job discovery  *(built)*
@@ -262,11 +262,11 @@ Requirements are identified as `FR-<module>-<n>` and carry a priority:
 | FR-JOB-2 | P0 | Results are deduplicated across titles by posting ID. *(Built)* |
 | FR-JOB-3 | P0 | Every posting is normalised to one shape: id, title, company, location, employment type, description, apply link, remote flag, posted date, salary range. *(Built)* |
 | FR-JOB-4 | P0 | The job list renders **live** results. The mock data path is a development aid and must be switchable without editing source. *(Not built — see D3)* |
-| FR-JOB-5 | P0 | Postings are restricted to the last 30 days; the country is selectable and defaults to India. *(Partially built — `date_posted: month` is fixed; country is a parameter but has no UI control)* |
+| FR-JOB-5 | P0 | Postings are restricted to the last 30 days; the country is selectable and defaults to India. *(Built — 18-country selector beside the search)* |
 | FR-JOB-6 | P0 | An aggregator failure for one title does not fail the whole search; remaining titles still return. *(Built — per-title exception handling)* |
 | FR-JOB-7 | P0 | A posting with no usable apply link renders its action disabled rather than opening a dead tab. *(Built)* |
 | FR-JOB-8 | P1 | The percentage shown on a job card must be a per-posting figure, not the title confidence reused across every result for that title. *(Not built — see D7)* |
-| FR-JOB-9 | P1 | The candidate can filter by remote, employment type, location, and date posted, and sort by match or recency. |
+| FR-JOB-9 | P1 | The candidate can filter by remote, employment type, location, and date posted, and sort by match or recency. *(Built — filtered in memory; a second search to show fewer results would spend quota)* |
 | FR-JOB-10 | P1 | Salary renders as a range and degrades gracefully when the aggregator returns nothing — the field is frequently null. |
 | FR-JOB-11 | P2 | More than one aggregator is supported behind a common interface, so a quota exhaustion or outage at one source is survivable. |
 | FR-JOB-12 | P2 | Results are paginated beyond the first page of each title's results. |
@@ -288,7 +288,7 @@ have worked out themselves.
 | FR-ATS-8 | P1 | Results are cached per (profile version, posting) pair, so re-opening a job does not re-run a 30–120 second inference. |
 | FR-ATS-9 | P1 | A one-line verdict band accompanies the number — Strong / Good / Fair / Weak / Mismatch — so the score is interpretable at a glance. *(Thresholds already exist in `matchPillClasses`; they must be driven by real scores.)* |
 | FR-ATS-10 | P1 | Matched and missing skills link back to where they appear in the posting, so the candidate can verify the judgement. |
-| FR-ATS-11 | P2 | Side-by-side comparison of all analysed jobs on one screen. |
+| FR-ATS-11 | P2 | Side-by-side comparison of all analysed jobs on one screen. *(Built)* |
 
 ### 5.6 M6 — Resume optimisation
 
@@ -303,7 +303,7 @@ converts an analysis into an outcome.
 | FR-OPT-4 | P0 | The tailored resume exports as a PDF that survives ATS parsing — selectable text, single column, standard section headings, no text in images or tables. |
 | FR-OPT-5 | P1 | The tailored resume is scored against the same posting so the candidate sees the before/after delta. |
 | FR-OPT-6 | P1 | Tailored resumes are stored per posting, so the candidate can see which version was sent where. |
-| FR-OPT-7 | P2 | Multiple templates, with an ATS-safe template as the default. |
+| FR-OPT-7 | P2 | Multiple templates, with an ATS-safe template as the default. *(Built — classic, compact, plain; all ATS-safe, differing in density only)* |
 
 ### 5.7 M7 — Accounts, persistence, and session continuity
 
@@ -317,7 +317,7 @@ converts an analysis into an outcome.
 | FR-ACC-6 | P0 | Long-running operations survive a page refresh: work is tracked server-side and the client reattaches to it. |
 | FR-ACC-7 | P1 | Password reset by emailed single-use, time-limited link. |
 | FR-ACC-8 | P1 | The Candidate can download everything the system holds about them as JSON. |
-| FR-ACC-9 | P2 | Social sign-in (Google). |
+| FR-ACC-9 | P2 | Social sign-in (Google). *(Built — optional, off unless credentials are configured)* |
 
 ### 5.8 M8 — Application tracker
 
@@ -350,7 +350,7 @@ Marked "Coming Soon" in the current UI.
 |---|---|---|
 | FR-GAP-1 | P1 | Missing skills are aggregated across all analysed postings and ranked by how often they appear. |
 | FR-GAP-2 | P1 | The Candidate sees which 3–5 skills would most raise their average match score. |
-| FR-GAP-3 | P2 | Each gap links to concrete learning resources. |
+| FR-GAP-3 | P2 | Each gap links to concrete learning resources. *(Built — curated official docs, or a search; never a guessed URL)* |
 | FR-GAP-4 | P2 | A projected match improvement per skill acquired. |
 
 ### 5.11 M11 — Interview preparation

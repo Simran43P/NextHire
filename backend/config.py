@@ -148,6 +148,25 @@ MIN_PASSWORD_LENGTH: int = _int("MIN_PASSWORD_LENGTH", 10)
 
 
 # ---------------------------------------------------------------------------
+# Google sign-in (optional)
+# ---------------------------------------------------------------------------
+
+# Entirely optional, and off unless both values are present. Creating the
+# credentials needs a Google Cloud project, which is free but is something only
+# the person deploying this can do - so the app has to work without it rather
+# than fail at startup.
+GOOGLE_CLIENT_ID: str | None = os.getenv("GOOGLE_CLIENT_ID") or None
+GOOGLE_CLIENT_SECRET: str | None = os.getenv("GOOGLE_CLIENT_SECRET") or None
+
+# Must match a redirect URI registered on the Google credential exactly.
+GOOGLE_REDIRECT_URI: str = os.getenv(
+    "GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback"
+)
+
+GOOGLE_ENABLED: bool = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+
+
+# ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------
 
@@ -180,10 +199,12 @@ APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:5173")
 def describe() -> str:
     """One-line startup summary, so misconfiguration is obvious immediately."""
     jobs_mode = "MOCK (no quota used)" if USE_MOCK_JOBS else "live via RapidAPI"
+    google = "on" if GOOGLE_ENABLED else "off"
     return (
         f"model={OLLAMA_MODEL} at {OLLAMA_URL} | "
         f"llm_concurrency={LLM_CONCURRENCY} | "
         f"jobs={jobs_mode} | "
         f"max_upload={MAX_UPLOAD_MB}MB | "
-        f"cors={len(CORS_ORIGINS)} origin(s)"
+        f"cors={len(CORS_ORIGINS)} origin(s) | "
+        f"google sign-in={google}"
     )

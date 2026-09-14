@@ -22,6 +22,7 @@ back out, neither can an ATS.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import pymupdf
@@ -40,10 +41,71 @@ BODY_SIZE = 9.5
 LINE_HEIGHT = 12.5
 
 
+@dataclass(frozen=True)
+class Style:
+    """
+    How a resume looks. What it is made of never changes.
+
+    Every template is single column, base-14, image-free and uses the same
+    standard headings - those are the things a parser depends on, so they are
+    not offered as choices. The knobs below affect density and ornament only,
+    which is what "a different template" can safely mean for a document whose
+    first reader is a machine.
+    """
+
+    key: str
+    label: str
+    description: str
+    name_size: float = NAME_SIZE
+    heading_size: float = HEADING_SIZE
+    body_size: float = BODY_SIZE
+    line_height: float = LINE_HEIGHT
+    section_gap: float = 8
+    heading_rule: bool = True
+
+
+TEMPLATES: dict[str, Style] = {
+    "classic": Style(
+        key="classic",
+        label="Classic",
+        description="Comfortable spacing with a rule under each heading.",
+    ),
+    "compact": Style(
+        key="compact",
+        label="Compact",
+        description="Tighter, for long histories that would spill onto a second page.",
+        name_size=15,
+        heading_size=9.5,
+        body_size=9,
+        line_height=11,
+        section_gap=5,
+    ),
+    "plain": Style(
+        key="plain",
+        label="Plain",
+        description="No rules or ornament at all. The safest thing to hand a parser.",
+        name_size=14,
+        heading_size=10,
+        body_size=9.5,
+        line_height=12,
+        section_gap=7,
+        heading_rule=False,
+    ),
+}
+
+DEFAULT_TEMPLATE = "classic"
+
+
+def resolve_style(template: str | None) -> Style:
+    """Fall back to the default rather than failing on an unknown name."""
+    return TEMPLATES.get((template or "").lower(), TEMPLATES[DEFAULT_TEMPLATE])
+
+
 class _Canvas:
     """A cursor over a growing document, with page breaks handled for you."""
 
-    def __init__(self) -> None:
+    def __init__(self, style: Style | None = None) -> None:
+        self.style = style or TEMPLATES[DEFAULT_TEMPLATE]
         self.document = pymupdf.open()
         self.page = self.document.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
         self.y = MARGIN
@@ -57,7 +119,7 @@ class _Canvas:
         self,
         content: str,
         *,
-        size: float = BODY_SIZE,
+        size: float | None = None,
         bold: bool = False,
         indent: float = 0,
         gap: float = 0,
@@ -66,48 +128,51 @@ class _Canvas:
         if not content or not content.strip():
             return
 
+        size = self.style.body_size if size is None else size
         font = BOLD_FONT if bold else BODY_FONT
         width = CONTENT_WIDTH - indent
 
         for line in _wrap(sanitise(content).strip(), font, size, width):
-            self._ensure_space(LINE_HEIGHT)
+            self._ensure_space(self.style.line_height)
             self.page.insert_text(
                 (MARGIN + indent, self.y + size),
                 line,
                 fontname=font,
                 fontsize=size,
             )
-            self.y += max(LINE_HEIGHT, size * 1.3)
+            self.y += max(self.style.line_height, size * 1.3)
 
         self.y += gap
 
     def heading(self, title: str) -> None:
         self._ensure_space(34)
-        self.y += 8
+        self.y += self.style.section_gap
         self.page.insert_text(
-            (MARGIN, self.y + HEADING_SIZE),
+            (MARGIN, self.y + self.style.heading_size),
             title.upper(),
             fontname=BOLD_FONT,
-            fontsize=HEADING_SIZE,
+            fontsize=self.style.heading_size,
         )
-        self.y += HEADING_SIZE + 4
-        # A hairline under the heading. Drawn as a line, never as a bordered
-        # table cell, which some parsers treat as a layout boundary.
-        self.page.draw_line(
-            pymupdf.Point(MARGIN, self.y),
-            pymupdf.Point(PAGE_WIDTH - MARGIN, self.y),
-            color=(0.7, 0.7, 0.7),
-            width=0.6,
-        )
+        self.y += self.style.heading_size + 4
+        if self.style.heading_rule:
+            # A hairline under the heading. Drawn as a line, never as a
+            # bordered table cell, which some parsers read as a layout
+            # boundary and split the page on.
+            self.page.draw_line(
+                pymupdf.Point(MARGIN, self.y),
+                pymupdf.Point(PAGE_WIDTH - MARGIN, self.y),
+                color=(0.7, 0.7, 0.7),
+                width=0.6,
+            )
         self.y += 7
 
     def bullet(self, content: str) -> None:
         if not content.strip():
             return
-        font, size = BODY_FONT, BODY_SIZE
+        font, size = BODY_FONT, self.style.body_size
         lines = _wrap(sanitise(content).strip(), font, size, CONTENT_WIDTH - 12)
         for index, line in enumerate(lines):
-            self._ensure_space(LINE_HEIGHT)
+            self._ensure_space(self.style.line_height)
             prefix = "- " if index == 0 else "  "
             self.page.insert_text(
                 (MARGIN + (0 if index == 0 else 12), self.y + size),
@@ -115,7 +180,7 @@ class _Canvas:
                 fontname=font,
                 fontsize=size,
             )
-            self.y += LINE_HEIGHT
+            self.y += self.style.line_height
 
     def to_bytes(self) -> bytes:
         return self.document.tobytes()
@@ -184,16 +249,17 @@ def _contact_line(profile: dict[str, Any]) -> str:
     return "  |  ".join(str(part).strip() for part in parts if str(part or "").strip())
 
 
-def render(profile: dict[str, Any]) -> bytes:
-    """Render a profile to PDF bytes."""
-    canvas = _Canvas()
+def render(profile: dict[str, Any], template: str | None = None) -> bytes:
+    """Render a profile to PDF bytes using one of the ATS-safe templates."""
+    style = resolve_style(template)
+    canvas = _Canvas(style)
     try:
         name = (profile.get("name") or "").strip()
         if name:
-            canvas.text(name, size=NAME_SIZE, bold=True)
+            canvas.text(name, size=style.name_size, bold=True)
         contact = _contact_line(profile)
         if contact:
-            canvas.text(contact, size=BODY_SIZE - 0.5, gap=2)
+            canvas.text(contact, size=style.body_size - 0.5, gap=2)
 
         summary = (profile.get("summary") or "").strip()
         if summary:
@@ -221,7 +287,7 @@ def render(profile: dict[str, Any]) -> bytes:
                     canvas.text(title, bold=True)
                 duration = str(entry.get("duration") or "").strip()
                 if duration:
-                    canvas.text(duration, size=BODY_SIZE - 0.5)
+                    canvas.text(duration, size=style.body_size - 0.5)
                 for line in (entry.get("responsibilities") or []) + (
                     entry.get("achievements") or []
                 ):
@@ -246,11 +312,11 @@ def render(profile: dict[str, Any]) -> bytes:
                 ]
                 if technologies:
                     canvas.text(f"Technologies: {', '.join(technologies)}",
-                                size=BODY_SIZE - 0.5)
+                                size=style.body_size - 0.5)
                 for link_field in ("github", "live_demo"):
                     link = str(entry.get(link_field) or "").strip()
                     if link:
-                        canvas.text(link, size=BODY_SIZE - 0.5)
+                        canvas.text(link, size=style.body_size - 0.5)
                 canvas.y += 4
 
         education = [e for e in (profile.get("education") or []) if isinstance(e, dict)]
@@ -293,7 +359,9 @@ def render(profile: dict[str, Any]) -> bytes:
         canvas.close()
 
 
-def render_letter(content: str, *, name: str = "") -> bytes:
+def render_letter(
+    content: str, *, name: str = "", template: str | None = None
+) -> bytes:
     """
     Render a cover letter as a plain PDF.
 
@@ -301,10 +369,11 @@ def render_letter(content: str, *, name: str = "") -> bytes:
     the letter through the same parser, and a letter that arrives as unreadable
     glyphs is worse than no letter.
     """
-    canvas = _Canvas()
+    style = resolve_style(template)
+    canvas = _Canvas(style)
     try:
         if name.strip():
-            canvas.text(name.strip(), size=NAME_SIZE - 3, bold=True, gap=6)
+            canvas.text(name.strip(), size=style.name_size - 3, bold=True, gap=6)
 
         for paragraph in (content or "").split("\n\n"):
             canvas.text(paragraph.strip(), gap=8)

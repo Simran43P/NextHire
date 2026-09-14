@@ -128,6 +128,7 @@ The values worth knowing about:
 | `LLM_CONCURRENCY` | `2` | Set to `1` on CPU - parallel calls contend for the same cores |
 | `EXTRACTION_TIMEOUT_SECONDS` | `300` | Lower it on fast hardware |
 | `MAX_UPLOAD_MB` | `5` | Upload ceiling, enforced server-side |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | unset | Enables "Continue with Google" (see below) |
 
 ### Live job search
 
@@ -147,6 +148,18 @@ To use live postings:
 > intact. If the quota does run out, the app says so rather than showing an
 > empty list.
 
+### Google sign-in (optional)
+
+Off unless both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set; the
+button does not appear otherwise and email/password works exactly as before.
+To enable it, create an OAuth client in a Google Cloud project (free), add
+`http://localhost:8000/api/auth/google/callback` as an authorised redirect URI,
+and put both values in `backend/.env`.
+
+Accounts are matched on Google's stable subject id rather than on the email
+address. Matching on email would split one person into two accounts if they
+ever changed it - or hand their account to whoever later acquired the address.
+
 ---
 
 ## Tests
@@ -156,7 +169,7 @@ cd backend
 python -m pytest
 ```
 
-330 tests. The model and every external API are mocked, so the suite runs
+378 tests. The model and every external API are mocked, so the suite runs
 offline in under two seconds and spends no quota.
 
 ```bash
@@ -208,6 +221,8 @@ backend/
   cover_letter.py   Cover letters, with unsupported claims located per sentence
   interview.py      Technical, behavioural and gap-probing questions
   gap.py            Skills gap across every analysis - arithmetic, no model call
+  documents.py      PDF and DOCX text extraction, detected by content
+  resources.py      Curated docs links per skill; never a guessed URL
   models.py         13 tables: users, resumes, profiles, jobs, analyses...
   db.py             Async engine; WAL and foreign keys turned on
   auth.py           Argon2id passwords, server-side sessions, ownership guards
@@ -246,6 +261,13 @@ A few things work the way they do deliberately:
   claimed but the posting never mentions.
 - **Extraction is deterministic.** The same resume always produces the same
   profile.
+- **PDF and DOCX are both accepted**, decided by the file's bytes rather than
+  its extension. Word tables are read too, since plenty of resumes lay
+  themselves out in one.
+- **Skills-gap links are never guessed.** Each gap gets its project's official
+  documentation where that is one of the ~35 curated entries, and a search
+  otherwise. A broken link in a tool that exists to be trusted costs more than
+  the convenience is worth.
 - **Guests are first-class.** The whole pipeline works signed out. Registering
   carries the work you already did into the new account rather than discarding
   it, so signing up never costs you the upload you just waited a minute for.

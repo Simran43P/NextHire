@@ -358,6 +358,21 @@ function Pipeline() {
       <ResumeDialog
         showDialog={showResumeDialog}
         background={isAuthenticated}
+        isAuthenticated={isAuthenticated}
+        onUseExisting={async (id) => {
+          // Reopening a stored resume skips the upload and the minute of
+          // extraction that would otherwise reproduce the same profile.
+          try {
+            const stored = await fetchProfile(id);
+            setProfile(stored.profile);
+            setProfileId(stored.profile_id);
+            setGaps(stored.gaps ?? []);
+            setShowResumeDialog(false);
+            setStep(STEP.review);
+          } catch {
+            // Deleted, or not ours any more. The upload path still works.
+          }
+        }}
         onClose={() => setShowResumeDialog(false)}
         onParsed={({ profile: parsed, gaps: found, profileId: storedId, rawText, filename }) => {
           setProfile(parsed);

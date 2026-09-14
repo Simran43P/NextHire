@@ -49,14 +49,14 @@ class TestParseResume:
         assert body["profile"]["name"] == "Asha Menon"
         assert body["profile_id"] is None
 
-    def test_a_non_pdf_is_rejected_by_content_not_by_filename(self, client, mock_model):
+    def test_a_non_document_is_rejected_by_content_not_by_filename(self, client, mock_model):
         mock_model()
         response = client.post(
             "/api/parse-resume",
             files={"file": ("resume.pdf", b"just some text", "application/pdf")},
         )
         assert response.status_code == 400
-        assert response.json()["detail"]["code"] == "not_a_pdf"
+        assert response.json()["detail"]["code"] == "unsupported_format"
 
     def test_an_oversized_upload_is_rejected(self, client, mock_model, monkeypatch):
         mock_model()
@@ -86,7 +86,7 @@ class TestParseResume:
             files={"file": ("scan.pdf", pdf_bytes(" "), "application/pdf")},
         )
         assert response.status_code == 400
-        assert response.json()["detail"]["code"] == "no_text_in_pdf"
+        assert response.json()["detail"]["code"] == "no_text_in_document"
 
     def test_a_corrupt_pdf_is_reported_readably(self, client, mock_model):
         mock_model()
@@ -95,7 +95,10 @@ class TestParseResume:
             files={"file": ("resume.pdf", b"%PDF-1.4 truncated garbage", "application/pdf")},
         )
         assert response.status_code == 400
-        assert response.json()["detail"]["code"] in {"unreadable_pdf", "no_text_in_pdf"}
+        assert response.json()["detail"]["code"] in {
+            "unreadable_document",
+            "no_text_in_document",
+        }
 
     @pytest.mark.parametrize(
         "error,status",

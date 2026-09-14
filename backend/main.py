@@ -35,6 +35,7 @@ from routers import (
     account,
     applications,
     auth as auth_routes,
+    oauth,
     optimize,
     pipeline,
     prep,
@@ -79,6 +80,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_routes.router)
+app.include_router(oauth.router)
 app.include_router(pipeline.router)
 app.include_router(optimize.router)
 app.include_router(prep.router)
