@@ -4,7 +4,7 @@
 |---|---|
 | **Companion to** | [PRD.md](PRD.md) — every step traces to a requirement ID there |
 | **Total steps** | **44**, across 5 phases |
-| **Progress** | **21 of 44 done** — Phases 0 and 1 complete |
+| **Progress** | **33 of 44 done** — Phases 0, 1 and 2 complete |
 | **Document status** | Draft v1.0 |
 | **Last updated** | 2026-09-14 |
 
@@ -29,10 +29,10 @@ blocker in its own phase can run in parallel with its siblings.
 |---|---|---|---|---|
 | **Phase 0** — Reconnect the pipeline | 12 | Mostly S | **Done** | The app runs end to end on live data |
 | **Phase 1** — Make the analysis trustworthy | 9 | S–M | **Done** | The scores can be believed |
-| **Phase 2** — Accounts and persistence | 12 | L | Not started | It becomes a product, not a demo |
+| **Phase 2** — Accounts and persistence | 12 | L | **Done** | It becomes a product, not a demo |
 | **Phase 3** — Resume optimisation | 6 | M–L | Not started | The candidate leaves with something |
 | **Phase 4** — Application lifecycle | 5 | M | Not started | The loop the landing page promises |
-| | **44** | | **21 done** | |
+| | **44** | | **33 done** | |
 
 **The shortest path to a working demo is Phase 0 alone — 12 steps, almost all
 small, no new features.** Everything needed for it is already written; it is
@@ -91,10 +91,10 @@ about its own failures.
 
 ---
 
-## Phase 2 — Accounts and persistence  *(12 steps — the structural phase)*
+## Phase 2 — Accounts and persistence  *(12 steps — done)*
 
-Nothing persists today. No database, no ORM, no migrations, no file storage.
-This is the largest phase and the one that turns a demo into a product.
+Nothing persisted before this phase. No database, no ORM, no migrations, no file storage.
+This was the largest phase and the one that turned a demo into a product.
 
 ### Foundation (2.1 – 2.3) — strictly sequential
 

@@ -13,7 +13,7 @@ import {
   Star,
 } from "lucide-react";
 
-function Navbar({ setShowDialog }) {
+function Navbar({ setShowDialog, accountSlot }) {
   return (
     <nav className="flex items-center justify-between py-6 px-8 max-w-7xl mx-auto">
       <div className="flex items-center gap-2">
@@ -22,12 +22,15 @@ function Navbar({ setShowDialog }) {
         </div>
         <span className="text-xl font-bold text-slate-900">NextHire</span>
       </div>
-      <button 
-        className="bg-blue-500 hover:bg-blue-600 transition-colors text-white rounded-full px-6 py-2.5 font-medium text-sm"
-        onClick={() => setShowDialog(true)}
-      >
-        Get started free
-      </button>
+      <div className="flex items-center gap-3">
+        {accountSlot}
+        <button 
+          className="bg-blue-500 hover:bg-blue-600 transition-colors text-white rounded-full px-6 py-2.5 font-medium text-sm"
+          onClick={() => setShowDialog(true)}
+        >
+          Get started free
+        </button>
+      </div>
     </nav>
   );
 }
@@ -326,10 +329,10 @@ function CTA({ setShowDialog }) {
   );
 }
 
-export default function NextHireLanding({ setShowDialog }) {
+export default function NextHireLanding({ setShowDialog, accountSlot }) {
   return (
     <div className="min-h-screen bg-white font-sans antialiased">
-      <Navbar setShowDialog={setShowDialog} />
+      <Navbar setShowDialog={setShowDialog} accountSlot={accountSlot} />
       <Hero setShowDialog={setShowDialog} />
       <Features />
       <CTA setShowDialog={setShowDialog} />

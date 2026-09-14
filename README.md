@@ -21,6 +21,10 @@ Upload PDF  →  Structured profile  →  Review & correct  →  Job titles
                        ATS analysis  ←  Pick up to 5  ←  Live job postings
 ```
 
+You can run all of it **without an account**. Signing in is what makes the
+results persist between visits - and what lets a slow analysis survive a page
+refresh.
+
 Each stage is one backend call. The slow ones (extraction, inference, analysis)
 run against a local model and take tens of seconds; every one of them shows
 staged progress rather than a spinner.
@@ -62,10 +66,13 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt
 
 cd backend
+alembic upgrade head      # create the database
 uvicorn main:app --reload
 ```
 
-Runs on http://localhost:8000. Check it with http://localhost:8000/api/health.
+Runs on http://localhost:8000. The database is a single SQLite file
+(`backend/nexthire.db`) and uploaded resumes live in `backend/storage/`; both
+are gitignored. Check it with http://localhost:8000/api/health.
 
 ### 4. Frontend
 
@@ -126,7 +133,7 @@ cd backend
 python -m pytest
 ```
 
-142 tests. The model and every external API are mocked, so the suite runs
+201 tests. The model and every external API are mocked, so the suite runs
 offline in under two seconds and spends no quota.
 
 ```bash
@@ -150,12 +157,23 @@ backend/
   job_search.py     Titles       -> live postings (or samples)
   prescore.py       Free local keyword overlap per posting
   ats_matcher.py    Profile + posting -> match analysis
+  models.py         13 tables: users, resumes, profiles, jobs, analyses...
+  db.py             Async engine; WAL and foreign keys turned on
+  auth.py           Argon2id passwords, server-side sessions, ownership guards
+  persistence.py    Saving pipeline output, reading it back scoped to a user
+  storage.py        Resume files under random keys, never served statically
+  tasks.py          Background model work that survives a page refresh
+  ratelimit.py      Per-account and per-IP fixed windows
+  routers/          auth, pipeline, tasks, account
+  alembic/          Schema migrations
   tests/            Offline regression suite
 
 frontend/src/
   App.jsx           The pipeline as an explicit step machine
-  api/client.js     HTTP layer; normalises every failure
-  api/pipeline.js   The four stage calls
+  api/client.js     HTTP layer; normalises every failure, carries the cookie
+  api/pipeline.js   The four stage calls, plus background task polling
+  api/account.js    Register, sign in, export, delete
+  auth/             Auth context and the useAuth hook
   components/       One component per stage, plus shared ui/
 ```
 
@@ -177,6 +195,16 @@ A few things work the way they do deliberately:
   claimed but the posting never mentions.
 - **Extraction is deterministic.** The same resume always produces the same
   profile.
+- **Guests are first-class.** The whole pipeline works signed out. Registering
+  carries the work you already did into the new account rather than discarding
+  it, so signing up never costs you the upload you just waited a minute for.
+- **A stranger gets 404, not 403.** Confirming that someone else's profile
+  exists is itself a disclosure, so "not yours" and "not there" look identical.
+- **Analyses are cached per profile version.** Re-opening a job is instant;
+  correcting your profile bumps the version and re-scores, so a stale number
+  cannot survive an edit.
+- **Deleting your account really deletes it.** Rows cascade, the stored PDFs are
+  removed from disk, and every session is revoked immediately.
 
 ### Why the score is not just whatever the model said
 

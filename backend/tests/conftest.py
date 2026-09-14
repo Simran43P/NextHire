@@ -2,11 +2,20 @@
 Shared fixtures.
 
 The local model is mocked in every test. Nothing here contacts Ollama, RapidAPI,
-or any other network service, so the suite runs offline, in under a second, and
-spends no API quota.
+or any other network service, so the suite runs offline, in under a few seconds,
+and spends no API quota.
+
+Each test that touches the database gets its own file-backed SQLite database in
+a temporary directory, so tests cannot see each other's rows and none of them
+can reach the real `nexthire.db`.
 """
 
 import pytest
+
+import config
+import db as database
+import ratelimit
+import tasks as task_queue
 
 
 @pytest.fixture
@@ -101,3 +110,108 @@ def pdf_bytes():
         return data
 
     return build
+
+
+# ---------------------------------------------------------------------------
+# Database and application
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def isolated_db(tmp_path, monkeypatch):
+    """A private database and storage directory for one test."""
+    monkeypatch.setattr(
+        config, "DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"
+    )
+    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path / "storage"))
+
+    # The engine is cached in module globals; clear it so the new URL is used.
+    await database.dispose()
+    await database.create_all()
+    ratelimit.reset()
+
+    yield database.get_sessionmaker()
+
+    await database.dispose()
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    """
+    A TestClient wired to a private database.
+
+    The app's lifespan runs, which creates the schema and starts the task
+    workers, so this exercises the real startup path rather than a stand-in.
+    """
+    import asyncio
+
+    from fastapi.testclient import TestClient
+
+    import main
+
+    monkeypatch.setattr(
+        config, "DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"
+    )
+    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path / "storage"))
+    ratelimit.reset()
+
+    # Reset cached engine and worker state left over from a previous test.
+    asyncio.run(database.dispose())
+    task_queue._workers.clear()
+    task_queue._queue = None
+
+    with TestClient(main.app) as test_client:
+        yield test_client
+
+    asyncio.run(database.dispose())
+
+
+@pytest.fixture
+def register(client):
+    """Register a user and return the response body. The client keeps the cookie."""
+
+    def _register(email: str = "asha@example.com", password: str = "correct-horse-battery", **extra):
+        response = client.post(
+            "/api/auth/register",
+            json={"email": email, "password": password, **extra},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    return _register
+
+
+@pytest.fixture
+def mock_model(monkeypatch):
+    """Patch the AI entry points the pipeline router calls."""
+
+    def install(*, extract=None, titles=None, analysis=None, raises=None):
+        async def _extract(text):
+            if raises:
+                raise raises
+            return extract or {"profile": {}, "gaps": []}
+
+        async def _titles(profile):
+            if raises:
+                raise raises
+            return titles or []
+
+        async def _analysis(resume_profile, job_description):
+            if raises:
+                raise raises
+            return analysis or {
+                "match_score": 70,
+                "matched_skills": ["Python"],
+                "missing_skills": ["Docker"],
+                "recommendations": ["Add container experience"],
+                "evidence": {"Python": "Python required."},
+                "label": "Good Match",
+                "summary": "A good fit.",
+                "corrected_skills": [],
+            }
+
+        monkeypatch.setattr("routers.pipeline.extract_resume_data", _extract)
+        monkeypatch.setattr("routers.pipeline.infer_job_titles", _titles)
+        monkeypatch.setattr("routers.pipeline.analyze_job_match", _analysis)
+
+    return install

@@ -149,7 +149,7 @@ and each stage is a separate backend call.
 
 ## 4. Current state of the codebase
 
-Establishes the baseline this PRD builds on. **Phases 0 and 1 of
+Establishes the baseline this PRD builds on. **Phases 0, 1 and 2 of
 [BUILD-PLAN.md](BUILD-PLAN.md) are complete**; this table reflects the state
 after that work.
 
@@ -170,8 +170,13 @@ after that work.
 | Model serving | **Built** | `backend/llm.py` — async, bounded concurrency, typed errors; all config in `backend/config.py` |
 | Tests | **Built** | 127 tests in `backend/tests/`, model fully mocked, offline, no quota spent |
 | Python dependency manifest | **Built** | `backend/requirements.txt`, pinned |
-| Accounts / auth | **Not started** | Phase 2 |
-| Persistence / database | **Not started** | No database of any kind. Everything still lives in React state |
+| Accounts / auth | **Built** | Argon2id passwords, server-side sessions in httpOnly cookies, password reset |
+| Persistence / database | **Built** | SQLAlchemy 2 async over SQLite, 13 tables, Alembic migrations |
+| Ownership enforcement | **Built** | Every read filters on `user_id` in the query; a stranger gets 404, not 403 |
+| Analysis caching | **Built** | Keyed on `(profile, job, profile_version)`; correcting a profile invalidates it |
+| Background task queue | **Built** | `backend/tasks.py` — work survives a refresh and is reattached by id |
+| Rate limiting | **Built** | Per account, falling back to IP, on uploads, inference and auth |
+| Data export / account deletion | **Built** | JSON export; deletion removes rows and files and revokes sessions |
 | Resume optimisation | **Not started** | Phase 3. The button is present and labelled "Coming soon" |
 | Cover letter generator | **Not started** | Phase 4. Advertised on the landing page |
 | Application tracker | **Not started** | Phase 4. Advertised on the landing page |

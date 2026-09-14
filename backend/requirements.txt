@@ -20,8 +20,25 @@ pymupdf>=1.25.0,<2.0.0
 # Async HTTP, used for both the local model and the job search API.
 httpx>=0.28.0,<0.29.0
 
+# Email address validation for Pydantic (EmailStr).
+email-validator>=2.0.0,<3.0.0
+
 # .env loading.
 python-dotenv>=1.0.0,<2.0.0
+
+# --- persistence -------------------------------------------------------------
+
+# SQLAlchemy 2.x with the async engine. SQLite by default: no server to run, no
+# cost, and the whole database is one file you can copy or delete.
+sqlalchemy>=2.0.30,<3.0.0
+aiosqlite>=0.20.0,<0.22.0
+
+# Schema migrations. Worth the ceremony as soon as the database holds data you
+# would rather not recreate by hand.
+alembic>=1.13.0,<2.0.0
+
+# Argon2id password hashing - the current OWASP recommendation.
+argon2-cffi>=23.1.0,<26.0.0
 
 # --- development / test only -------------------------------------------------
 pytest>=8.0.0,<9.0.0

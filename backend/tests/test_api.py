@@ -1,5 +1,5 @@
 """
-End-to-end route contracts, with the model mocked throughout.
+Route contracts for the pipeline, with the model mocked throughout.
 
 These cover the guarantee the frontend is built on: a failure arrives as an HTTP
 error carrying a machine-readable code, and a success always carries a complete,
@@ -7,44 +7,9 @@ correctly shaped payload.
 """
 
 import pytest
-from fastapi.testclient import TestClient
 
 import config
 import llm
-import main
-
-
-@pytest.fixture
-def client():
-    with TestClient(main.app) as test_client:
-        yield test_client
-
-
-@pytest.fixture
-def mock_model(monkeypatch):
-    """Patch the AI entry points main() calls, not the modules underneath."""
-
-    def install(*, extract=None, titles=None, analysis=None, raises=None):
-        async def _extract(text):
-            if raises:
-                raise raises
-            return extract or {"profile": {}, "gaps": []}
-
-        async def _titles(profile):
-            if raises:
-                raise raises
-            return titles or []
-
-        async def _analysis(resume_profile, job_description):
-            if raises:
-                raise raises
-            return analysis or {}
-
-        monkeypatch.setattr(main, "extract_resume_data", _extract)
-        monkeypatch.setattr(main, "infer_job_titles", _titles)
-        monkeypatch.setattr(main, "analyze_job_match", _analysis)
-
-    return install
 
 
 class TestHealth:
@@ -52,10 +17,11 @@ class TestHealth:
         body = client.get("/").json()
         assert body["jobs_mode"] in {"mock", "live"}
 
-    def test_health_reports_the_upload_limit(self, client):
+    def test_health_reports_the_upload_limit_and_database(self, client):
         body = client.get("/api/health").json()
         assert body["status"] == "ok"
         assert body["max_upload_mb"] == config.MAX_UPLOAD_MB
+        assert body["database"] == "ok"
 
 
 class TestParseResume:
@@ -71,9 +37,20 @@ class TestParseResume:
         assert body["gaps"] == []
         assert body["raw_text"]
 
+    def test_a_guest_gets_a_result_but_nothing_is_stored(
+        self, client, mock_model, pdf_bytes, sample_profile
+    ):
+        mock_model(extract={"profile": sample_profile, "gaps": []})
+        body = client.post(
+            "/api/parse-resume",
+            files={"file": ("resume.pdf", pdf_bytes(), "application/pdf")},
+        ).json()
+        # Registration is what makes results persist, not what makes them possible.
+        assert body["profile"]["name"] == "Asha Menon"
+        assert body["profile_id"] is None
+
     def test_a_non_pdf_is_rejected_by_content_not_by_filename(self, client, mock_model):
         mock_model()
-        # Named .pdf, declared as a PDF, but the bytes are not one.
         response = client.post(
             "/api/parse-resume",
             files={"file": ("resume.pdf", b"just some text", "application/pdf")},
@@ -86,10 +63,9 @@ class TestParseResume:
         monkeypatch.setattr(config, "MAX_UPLOAD_BYTES", 1024)
         monkeypatch.setattr(config, "MAX_UPLOAD_MB", 1)
 
-        payload = b"%PDF-" + b"0" * 4096
         response = client.post(
             "/api/parse-resume",
-            files={"file": ("resume.pdf", payload, "application/pdf")},
+            files={"file": ("resume.pdf", b"%PDF-" + b"0" * 4096, "application/pdf")},
         )
         assert response.status_code == 400
         assert response.json()["detail"]["code"] == "file_too_large"
@@ -105,8 +81,6 @@ class TestParseResume:
 
     def test_a_pdf_with_no_extractable_text_is_rejected(self, client, mock_model, pdf_bytes):
         mock_model()
-        # A scan is a valid PDF containing no text layer. Sending that to the
-        # model produces a confidently empty profile, which is worse than an error.
         response = client.post(
             "/api/parse-resume",
             files={"file": ("scan.pdf", pdf_bytes(" "), "application/pdf")},
@@ -149,7 +123,7 @@ class TestParseResume:
 class TestInferTitles:
     def test_titles_come_back_in_client_shape(self, client, mock_model, sample_profile):
         mock_model(titles=[{"title": "Backend Engineer", "confidence": 90, "reason": "Python"}])
-        response = client.post("/api/infer-titles", json=sample_profile)
+        response = client.post("/api/infer-titles", json={"profile": sample_profile})
         assert response.status_code == 200
         assert response.json()["titles"] == [
             {
@@ -162,11 +136,13 @@ class TestInferTitles:
 
     def test_an_empty_profile_is_rejected(self, client, mock_model):
         mock_model()
-        assert client.post("/api/infer-titles", json={}).status_code == 400
+        response = client.post("/api/infer-titles", json={})
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "missing_profile"
 
     def test_model_failure_surfaces_with_its_stage(self, client, mock_model, sample_profile):
         mock_model(raises=llm.LLMUnavailableError("down"))
-        response = client.post("/api/infer-titles", json=sample_profile)
+        response = client.post("/api/infer-titles", json={"profile": sample_profile})
         assert response.status_code == 503
         assert response.json()["detail"]["stage"] == "inference"
 
@@ -220,6 +196,7 @@ class TestAnalyzeAts:
             "evidence": {"Python": "Python and SQL required."},
             "label": "Good Match",
             "summary": "Your resume is a good fit.",
+            "corrected_skills": [],
         }
 
     def test_a_successful_analysis_returns_the_full_shape(
@@ -290,6 +267,8 @@ class TestCors:
         # authentication exists.
         assert "*" not in config.CORS_ORIGINS
 
-    def test_a_configured_origin_is_allowed(self, client):
+    def test_a_configured_origin_is_allowed_with_credentials(self, client):
         response = client.get("/", headers={"Origin": config.CORS_ORIGINS[0]})
         assert response.headers["access-control-allow-origin"] == config.CORS_ORIGINS[0]
+        # The session cookie cannot survive the cross-origin hop without this.
+        assert response.headers.get("access-control-allow-credentials") == "true"

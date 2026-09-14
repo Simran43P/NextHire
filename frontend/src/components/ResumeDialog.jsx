@@ -15,7 +15,7 @@ const STAGES = [
  * model call. They are shown as separate stages because conflating them into
  * one spinner makes a working minute-long extraction look like a hang.
  */
-export default function ResumeDialog({ showDialog, onClose, onParsed }) {
+export default function ResumeDialog({ showDialog, onClose, onParsed, background = false }) {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState(null);
   const [stage, setStage] = useState(null); // null | "upload" | "extract"
@@ -54,6 +54,9 @@ export default function ResumeDialog({ showDialog, onClose, onParsed }) {
 
     try {
       const result = await parseResume(file, {
+        // Signed in, this runs as a tracked task: closing the tab no longer
+        // throws away the minute the model spends reading the resume.
+        background,
         onProgress: (percent) => {
           setUploadPercent(percent);
           // The upload finishing is the moment the model starts working.

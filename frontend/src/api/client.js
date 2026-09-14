@@ -56,14 +56,21 @@ async function toApiError(response) {
   });
 }
 
-/** POST JSON and return the parsed body, or throw an ApiError. */
-export async function postJson(path, body, { signal } = {}) {
+/**
+ * Send a request and return the parsed body, or throw an ApiError.
+ *
+ * `credentials: "include"` is not optional. The session lives in an httpOnly
+ * cookie, and the API is on a different port from the dev server, so without it
+ * every authenticated request arrives anonymous.
+ */
+export async function request(path, { method = "GET", body, signal } = {}) {
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "include",
       signal,
     });
   } catch (error) {
@@ -72,7 +79,32 @@ export async function postJson(path, body, { signal } = {}) {
   }
 
   if (!response.ok) throw await toApiError(response);
+  if (response.status === 204) return null;
   return response.json();
+}
+
+export function getJson(path, options = {}) {
+  return request(path, { ...options, method: "GET" });
+}
+
+export function postJson(path, body, options = {}) {
+  return request(path, { ...options, method: "POST", body: body ?? {} });
+}
+
+export function patchJson(path, body, options = {}) {
+  return request(path, { ...options, method: "PATCH", body: body ?? {} });
+}
+
+/** GET a binary response as a Blob - used for the stored resume PDF. */
+export async function getBlob(path) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { credentials: "include" });
+  } catch {
+    throw new ApiError(NETWORK_ERROR);
+  }
+  if (!response.ok) throw await toApiError(response);
+  return response.blob();
 }
 
 /**
@@ -89,6 +121,9 @@ export function postFile(path, file, { onProgress } = {}) {
 
     const request = new XMLHttpRequest();
     request.open("POST", `${API_BASE_URL}${path}`);
+    // Same reason as credentials: "include" above - the session cookie has to
+    // travel with the upload or it arrives as a guest.
+    request.withCredentials = true;
 
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable && onProgress) {

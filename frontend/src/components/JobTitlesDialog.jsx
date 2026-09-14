@@ -66,25 +66,36 @@ function JobTitleRow({ job, isSelected, isDisabled, onToggle }) {
   );
 }
 
-export default function JobTitlesDialog({ profile, onClose, onJobsFound }) {
+export default function JobTitlesDialog({
+  profile,
+  profileId = null,
+  background = false,
+  onClose,
+  onJobsFound,
+}) {
   const [titles, setTitles] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
-  const [phase, setPhase] = useState(profile ? "inferring" : "ready");
+  const [phase, setPhase] = useState(profile || profileId ? "inferring" : "ready");
   const [error, setError] = useState(() =>
-    profile ? null : { message: "No resume profile available.", retryable: false }
+    profile || profileId
+      ? null
+      : { message: "No resume profile available.", retryable: false }
   );
   // Bumped to re-run inference; the fetch itself lives entirely in the effect.
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    if (!profile) return undefined;
+    if (!profile && !profileId) return undefined;
 
     const controller = new AbortController();
     let cancelled = false;
 
     (async () => {
       try {
-        const result = await inferTitles(profile, { signal: controller.signal });
+        const result = await inferTitles(
+          { profile, profileId },
+          { background, signal: controller.signal }
+        );
         if (cancelled) return;
 
         setTitles(result);
@@ -115,7 +126,7 @@ export default function JobTitlesDialog({ profile, onClose, onJobsFound }) {
       cancelled = true;
       controller.abort();
     };
-  }, [profile, reloadToken]);
+  }, [profile, profileId, background, reloadToken]);
 
   const retryTitles = () => {
     setTitles([]);
@@ -144,7 +155,7 @@ export default function JobTitlesDialog({ profile, onClose, onJobsFound }) {
     setError(null);
 
     try {
-      const result = await searchJobs(selected, { profile });
+      const result = await searchJobs(selected, { profile, profileId });
       onJobsFound(result, selected);
     } catch (err) {
       // Previously a browser alert(), which blocked the page and offered no

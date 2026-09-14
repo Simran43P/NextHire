@@ -115,6 +115,68 @@ CORS_ORIGINS: list[str] = _list(
 )
 
 
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+# SQLite by default: no server to run, no cost, and the whole database is one
+# file you can copy, inspect, or delete. Point this at Postgres when there is
+# ever more than one instance.
+DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./nexthire.db")
+
+# Where uploaded resumes are written. Files are stored under random keys, never
+# under their original filename, and are served only through an authorised route.
+STORAGE_DIR: str = os.getenv("STORAGE_DIR", "./storage")
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+SESSION_COOKIE_NAME: str = os.getenv("SESSION_COOKIE_NAME", "nexthire_session")
+SESSION_TTL_DAYS: int = _int("SESSION_TTL_DAYS", 30)
+
+# Leave false for local http development; set true wherever the app is served
+# over https, which is everywhere that is not a developer's machine.
+COOKIE_SECURE: bool = _bool("COOKIE_SECURE", False)
+# "lax" is right when the API and the SPA share a site. Cross-site cookies need
+# "none", which browsers only accept alongside Secure.
+COOKIE_SAMESITE: str = os.getenv("COOKIE_SAMESITE", "lax")
+
+PASSWORD_RESET_TTL_MINUTES: int = _int("PASSWORD_RESET_TTL_MINUTES", 30)
+MIN_PASSWORD_LENGTH: int = _int("MIN_PASSWORD_LENGTH", 10)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+# In-process counters. Fine for a single instance; a shared store would be
+# needed the moment there are two, which is a Phase 5 problem.
+RATE_LIMIT_ENABLED: bool = _bool("RATE_LIMIT_ENABLED", True)
+# Model calls cost real compute, so they are limited far harder than reads.
+RATE_LIMIT_INFERENCE_PER_HOUR: int = _int("RATE_LIMIT_INFERENCE_PER_HOUR", 60)
+RATE_LIMIT_UPLOAD_PER_HOUR: int = _int("RATE_LIMIT_UPLOAD_PER_HOUR", 20)
+RATE_LIMIT_AUTH_PER_HOUR: int = _int("RATE_LIMIT_AUTH_PER_HOUR", 20)
+
+
+# ---------------------------------------------------------------------------
+# Outbound email (password reset only)
+# ---------------------------------------------------------------------------
+
+# Entirely optional. With no host configured, reset links are printed to the
+# server log instead of emailed, which is all a single-user local install needs
+# and costs nothing.
+SMTP_HOST: str | None = os.getenv("SMTP_HOST") or None
+SMTP_PORT: int = _int("SMTP_PORT", 587)
+SMTP_USER: str | None = os.getenv("SMTP_USER") or None
+SMTP_PASSWORD: str | None = os.getenv("SMTP_PASSWORD") or None
+SMTP_FROM: str = os.getenv("SMTP_FROM", "nexthire@localhost")
+
+# Used to build the link in a reset email.
+APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:5173")
+
+
 def describe() -> str:
     """One-line startup summary, so misconfiguration is obvious immediately."""
     jobs_mode = "MOCK (no quota used)" if USE_MOCK_JOBS else "live via RapidAPI"

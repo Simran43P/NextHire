@@ -287,14 +287,20 @@ function AnalysisPanel({ job, state, onRetry }) {
   );
 }
 
-export default function ATSAnalysisDashboard({ selectedJobs = [], resumeProfile, onBack }) {
+export default function ATSAnalysisDashboard({
+  selectedJobs = [],
+  resumeProfile,
+  profileId = null,
+  background = false,
+  onBack,
+}) {
   const [jobs, setJobs] = useState(selectedJobs);
   const [selectedId, setSelectedId] = useState(selectedJobs[0]?.id ?? null);
   const [results, setResults] = useState({});
   const abortRef = useRef(new Map());
 
   const runAnalysis = useCallback(
-    async (job) => {
+    async (job, { refresh = false } = {}) => {
       abortRef.current.get(job.id)?.abort();
       const controller = new AbortController();
       abortRef.current.set(job.id, controller);
@@ -305,9 +311,18 @@ export default function ATSAnalysisDashboard({ selectedJobs = [], resumeProfile,
       }));
 
       try {
-        const analysis = await analyzeAts(resumeProfile, job.description ?? "", {
-          signal: controller.signal,
-        });
+        // With both ids the server serves a cached result when the profile has
+        // not changed, so revisiting a job is instant instead of another
+        // 30-second inference.
+        const analysis = await analyzeAts(
+          {
+            profile: resumeProfile,
+            profileId,
+            jobId: job.job_id ?? null,
+            jobDescription: job.description ?? "",
+          },
+          { background, refresh, signal: controller.signal }
+        );
         if (controller.signal.aborted) return;
         setResults((previous) => ({
           ...previous,
@@ -323,7 +338,7 @@ export default function ATSAnalysisDashboard({ selectedJobs = [], resumeProfile,
         }));
       }
     },
-    [resumeProfile]
+    [resumeProfile, profileId, background]
   );
 
   useEffect(() => {
