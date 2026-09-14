@@ -1,188 +1,286 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Body
-from fastapi.middleware.cors import CORSMiddleware
-import fitz  # PyMuPDF
-import io
+"""
+NextHire API.
+
+Four stages, one endpoint each:
+
+    POST /api/parse-resume   PDF        -> structured profile
+    POST /api/infer-titles   profile    -> ranked job titles
+    POST /api/jobs           titles     -> live postings (keyword pre-scored)
+    POST /api/analyze-ats    profile+JD -> ATS match analysis
+
+Every model failure reaches the client as a real HTTP error with a machine-
+readable code, never as an empty or zero-valued success. The client depends on
+being able to tell "this went wrong" from "this is your actual result".
+"""
+
+import contextlib
 import traceback
+from typing import Any
 
-#Import the AI logic modules
-from extractor import extract_resume_data
-from infer_titles import infer_job_titles
-from job_search import search_all_jobs
+import pymupdf
+from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+import config
+import llm
+import prescore
 from ats_matcher import analyze_job_match
+from extractor import extract_resume_data
+from infer_titles import infer_job_titles, to_api_shape
+from job_search import search_all_jobs
 
-# Initialize the FastAPI app
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    print(f"[startup] NextHire API | {config.describe()}")
+    if config.USE_MOCK_JOBS and config.RAPIDAPI_KEY is None:
+        print("[startup] No RAPIDAPI_KEY set - job search will serve sample postings.")
+    yield
+    await llm.close_client()
+
+
 app = FastAPI(
     title="NextHire Core API",
     description="Backend services for the Job Application AI Agent",
-    version="1.0.0"
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
-# Configure CORS so your React frontend can talk to this API
-# (By default React runs on port 5173 or 3000, and FastAPI on 8000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace "*" with your actual frontend URL
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
+
+# ---------------------------------------------------------------------------
+# Request bodies
+# ---------------------------------------------------------------------------
+
+
+class JobSearchRequest(BaseModel):
+    job_titles: list[dict[str, Any]] = Field(default_factory=list)
+    # Optional: supplying the profile lets every posting be annotated with the
+    # candidate's own skills that appear in it, for free and without a model call.
+    resume_profile: dict[str, Any] | None = None
+
+
+class AtsRequest(BaseModel):
+    resume_profile: dict[str, Any]
+    job_description: str
+
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
+
+
+def _llm_error(exc: llm.LLMError, stage: str) -> HTTPException:
+    """Turn a typed model failure into an HTTP error the client can act on."""
+    print(f"[error] {stage}: {exc.code} - {exc.detail}")
+    return HTTPException(
+        status_code=exc.http_status,
+        detail={
+            "code": exc.code,
+            "message": exc.message,
+            "stage": stage,
+            "retryable": True,
+        },
+    )
+
+
+def _bad_request(code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={"code": code, "message": message, "retryable": False},
+    )
+
+
+def _unexpected(exc: Exception, stage: str) -> HTTPException:
+    print(f"\n========== UNEXPECTED ERROR ({stage}) ==========")
+    traceback.print_exc()
+    print("================================================\n")
+    return HTTPException(
+        status_code=500,
+        detail={
+            "code": "internal_error",
+            "message": "Something went wrong on our side. Please try again.",
+            "stage": stage,
+            "retryable": True,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+
 @app.get("/")
 async def root():
-    return {"message": "NextHire API is running!"}
+    return {
+        "message": "NextHire API is running!",
+        "jobs_mode": "mock" if config.USE_MOCK_JOBS else "live",
+        "model": config.OLLAMA_MODEL,
+    }
+
+
+@app.get("/api/health")
+async def health():
+    """Cheap readiness probe the UI can use to warn before a long upload fails."""
+    return {
+        "status": "ok",
+        "jobs_mode": "mock" if config.USE_MOCK_JOBS else "live",
+        "model": config.OLLAMA_MODEL,
+        "max_upload_mb": config.MAX_UPLOAD_MB,
+    }
+
+
+async def _read_upload_within_limit(file: UploadFile) -> bytes:
+    """
+    Read an upload, aborting as soon as it exceeds the configured ceiling.
+
+    Streamed in chunks rather than read whole, so an oversized file is rejected
+    without first being pulled entirely into memory.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > config.MAX_UPLOAD_BYTES:
+            raise _bad_request(
+                "file_too_large",
+                f"That file is larger than {config.MAX_UPLOAD_MB}MB. "
+                "Please upload a smaller PDF.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
 
 @app.post("/api/parse-resume")
 async def parse_resume(file: UploadFile = File(...)):
-    """
-    Accepts a PDF file upload, extracts the raw text using PyMuPDF, 
-    and returns it to the client.
-    """
-    # 1. Validate file type
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are currently supported.")
+    """Extract text from an uploaded PDF and turn it into a structured profile."""
+    content = await _read_upload_within_limit(file)
+
+    if not content:
+        raise _bad_request("empty_file", "That file is empty.")
+
+    # Validate by content, not by filename. An extension proves nothing.
+    if not content.startswith(b"%PDF-"):
+        raise _bad_request(
+            "not_a_pdf",
+            "That does not look like a PDF file. Only PDF resumes are supported.",
+        )
 
     try:
-        # 2. Read the file into memory
-        content = await file.read()
-        
-        # 3. Open the PDF with PyMuPDF
-        # We use stream=content because the file is in memory, not saved to the hard drive
-        pdf_document = fitz.open(stream=content, filetype="pdf")
-        extracted_text = ""
-        
-        # 4. Iterate through pages and extract text
-        for page_num in range(len(pdf_document)):
-            page = pdf_document.load_page(page_num)
-            # You can experiment with get_text("blocks") later for better layout retention
-            extracted_text += page.get_text("text") + "\n"
-            
-        pdf_document.close()
+        with pymupdf.open(stream=content, filetype="pdf") as document:
+            pages = [document.load_page(i).get_text("text") for i in range(len(document))]
+        extracted_text = "\n".join(pages).strip()
+    except Exception as exc:
+        print(f"[parse] could not read PDF: {exc}")
+        raise _bad_request(
+            "unreadable_pdf",
+            "This PDF could not be read. It may be corrupted or password protected.",
+        )
 
-        extraction_result = extract_resume_data(extracted_text.strip()) 
+    # A scanned or image-only resume extracts to almost nothing. Sending that to
+    # the model produces a confidently empty profile, which is worse than an error.
+    if len(extracted_text) < config.MIN_RESUME_CHARS:
+        raise _bad_request(
+            "no_text_in_pdf",
+            "No readable text was found in this PDF. It looks like a scan or an "
+            "image. Please upload a text-based PDF resume.",
+        )
 
-        if not extraction_result["success"]:
-            raise HTTPException(
-                status_code=500,
-                detail=extraction_result["error"]
-            )
-            print(extraction_result)
+    try:
+        result = await extract_resume_data(extracted_text)
+    except llm.LLMError as exc:
+        raise _llm_error(exc, "extraction")
+    except Exception as exc:
+        raise _unexpected(exc, "extraction")
 
+    return {
+        "status": "success",
+        "filename": file.filename,
+        "profile": result["profile"],
+        "gaps": result["gaps"],
+        "raw_text": extracted_text,
+        "message": "Resume parsed successfully.",
+    }
 
-        print("Resume extraction completed.")
-        profile_json = extraction_result["profile"]
-
-        
-        
-        # 5. Return the extracted text
-        return {
-            "status": "success",
-            "filename": file.filename,
-            "profile": profile_json,
-            # "inferred_job_titles": inferred_titles,
-            "raw_text": extracted_text.strip(),
-            "message": "Resume parsed successfully."
-        }
-        
-    except Exception as e:
-        # Catch any errors (like corrupted PDFs) and return a 500 error
-        print("\n========== ERROR ==========")
-        traceback.print_exc()
-        print("===========================\n")
-        raise HTTPException(status_code=500, detail=f"An error occurred while parsing the PDF: {str(e)}")
 
 @app.post("/api/infer-titles")
-async def api_infer_titles(profile:dict = Body(...)):
-    """
-    Accepts a structured resume profile(JSON) and returns inferred job titles.
-    """
+async def api_infer_titles(profile: dict = Body(...)):
+    """Infer the job titles a profile actually qualifies for."""
+    if not profile:
+        raise _bad_request("missing_profile", "A resume profile is required.")
+
     try:
-        print("Calling infer_job_titles...")
-        inferred_titles = infer_job_titles(profile)
-        print("Returned from infer_job_titles.")
-        
+        titles = await infer_job_titles(profile)
+    except llm.LLMError as exc:
+        raise _llm_error(exc, "inference")
+    except Exception as exc:
+        raise _unexpected(exc, "inference")
 
-        formatted_titles = []
-        for i , job in enumerate(inferred_titles):
-            formatted_titles.append({
-                "id": f"title-{i}",
-                "title": job.get("title", "Unknown"),
-                "matchPercentage": job.get("confidence", 0)
-            })
+    return {"status": "success", "titles": to_api_shape(titles)}
 
-        return {"status": "success", "titles": formatted_titles}
-    except Exception as e:
-        print("\n========== INFERENCE ERROR ==========")
-        traceback.print_exc()
-        print("=====================================\n")
-        raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 @app.post("/api/jobs")
 async def api_search_jobs(
-    job_titles : list[dict] = Body(...),
-    country: str = "in"
+    request: JobSearchRequest,
+    country: str = Query(default=None),
 ):
-    try: 
-        jobs = await search_all_jobs(job_titles, country)
+    """Search live postings for the selected titles."""
+    if not request.job_titles:
+        raise _bad_request("no_titles", "Select at least one job title to search.")
 
-        return {
-            "status": "success",
-            "jobs": jobs
-        }
-    
-    except Exception as e:
-        print("\n========== JOB SEARCH ERROR ==========")
-        traceback.print_exc()
-        print("======================================\n")
+    try:
+        result = await search_all_jobs(request.job_titles, country)
+    except Exception as exc:
+        raise _unexpected(exc, "job_search")
 
-        raise HTTPException(
-            status_code=500,
-            detail=f"Job search failed: {str(e)}"
-        )
+    jobs = prescore.annotate_jobs(request.resume_profile, result["jobs"])
+
+    return {
+        "status": "success",
+        "jobs": jobs,
+        "warnings": result["warnings"],
+        "used_mock": result["used_mock"],
+        "quota_exhausted": result["quota_exhausted"],
+    }
+
 
 @app.post("/api/analyze-ats")
-async def api_analyze_ats(data: dict = Body(...)):
+async def api_analyze_ats(request: AtsRequest):
     """
-    Analyzes a resume profile against a job description using the ATS matcher.
+    Score one resume profile against one job description.
+
+    Failures are HTTP errors, never a zero score. The client fires one request
+    per selected job in parallel; the model-side semaphore bounds how many
+    actually run at once.
     """
+    if not request.resume_profile:
+        raise _bad_request("missing_profile", "A resume profile is required.")
+    if not request.job_description.strip():
+        raise _bad_request(
+            "missing_job_description",
+            "This posting has no description, so it cannot be analysed.",
+        )
+
     try:
-        resume_profile = data.get("resume_profile")
-        job_description = data.get("job_description")
-
-        if not resume_profile:
-            raise HTTPException(
-                status_code=400,
-                detail="Resume profile is required."
-            )
-
-        if not job_description:
-            raise HTTPException(
-                status_code=400,
-                detail="Job description is required."
-            )
-
-        print("Calling ATS analyzer...")
-
-        analysis = analyze_job_match(
-            resume_profile=resume_profile,
-            job_description=job_description
+        analysis = await analyze_job_match(
+            resume_profile=request.resume_profile,
+            job_description=request.job_description,
         )
+    except llm.LLMError as exc:
+        raise _llm_error(exc, "ats")
+    except Exception as exc:
+        raise _unexpected(exc, "ats")
 
-        print("ATS analysis completed.")
-
-        return {
-            "status": "success",
-            "analysis": analysis
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        print("\n========== ATS ANALYSIS ERROR ==========")
-        traceback.print_exc()
-        print("========================================\n")
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"ATS analysis failed: {str(e)}"
-        )
+    return {"status": "success", "analysis": analysis}

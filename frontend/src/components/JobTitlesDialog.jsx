@@ -1,418 +1,266 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { ArrowRight, Brain, Check, Loader2, Target, X } from "lucide-react";
+import { MAX_TITLE_SELECTIONS, inferTitles, searchJobs } from "../api/pipeline";
+import ErrorNotice from "./ui/ErrorNotice";
+import StageProgress from "./ui/StageProgress";
 
 /**
- * JobTitlesDialog
+ * Shows the job titles inferred from the profile and searches postings for the
+ * ones the candidate keeps.
  *
- * Modal dialog that displays AI-inferred job titles (sourced from the
- * `infer_titles.py` backend service) and lets the user select up to
- * 3 titles before kicking off a personalized job search.
- *
- * Expected backend payload shape (per job title):
- * { id: string, title: string, matchPercentage: number }
+ * Each selected title costs one job-search API call, so the selection cap is
+ * enforced here and the count is always visible.
  */
 
-const MAX_SELECTIONS = 5;
-
-// ---------------------------------------------------------------------------
-// Small inline icons (no external icon library dependency)
-// ---------------------------------------------------------------------------
-const BrainIcon = () => (
-  <svg
-    className="w-3.5 h-3.5"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M9.5 2a3.5 3.5 0 0 0-3.5 3.5v.34A3.5 3.5 0 0 0 4 9v1a3.5 3.5 0 0 0 1 6.16V17a3.5 3.5 0 0 0 3.5 3.5h1v-16h-1Z" />
-    <path d="M14.5 2a3.5 3.5 0 0 1 3.5 3.5v.34A3.5 3.5 0 0 1 20 9v1a3.5 3.5 0 0 1-1 6.16V17a3.5 3.5 0 0 1-3.5 3.5h-1v-16h1Z" />
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg
-    className="w-3.5 h-3.5 text-white"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="3"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M20 6 9 17l-5-5" />
-  </svg>
-);
-
-const TargetIcon = () => (
-  <svg
-    className="w-3 h-3"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <circle cx="12" cy="12" r="9" />
-    <circle cx="12" cy="12" r="5" />
-    <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-const ArrowRightIcon = () => (
-  <svg
-    className="w-4 h-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M5 12h14" />
-    <path d="M13 6l6 6-6 6" />
-  </svg>
-);
-
-const SpinnerIcon = () => (
-  <svg
-    className="w-5 h-5 animate-spin text-purple-500"
-    viewBox="0 0 24 24"
-    fill="none"
-  >
-    <circle
-      className="opacity-25"
-      cx="12"
-      cy="12"
-      r="10"
-      stroke="currentColor"
-      strokeWidth="4"
-    />
-    <path
-      className="opacity-75"
-      fill="currentColor"
-      d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-    />
-  </svg>
-);
-
-// ---------------------------------------------------------------------------
-// Individual selectable row
-// ---------------------------------------------------------------------------
 function JobTitleRow({ job, isSelected, isDisabled, onToggle }) {
-  const rowContent = (
+  const id = job.id ?? job.title;
+
+  const row = (
     <div
       className={`flex items-center justify-between p-4 rounded-xl bg-white ${
         isSelected ? "rounded-[10px]" : "border border-slate-200"
       } ${
-        isDisabled
-          ? "opacity-50 cursor-not-allowed"
-          : "cursor-pointer hover:border-slate-300"
+        isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-slate-300"
       } transition-colors`}
-      onClick={() => !isDisabled && onToggle(job.id ?? job.title)}
+      onClick={() => !isDisabled && onToggle(id)}
       role="checkbox"
       aria-checked={isSelected}
       aria-disabled={isDisabled}
       tabIndex={isDisabled ? -1 : 0}
-      onKeyDown={(e) => {
-        if (!isDisabled && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          onToggle(job.id ?? job.title);
+      onKeyDown={(event) => {
+        if (!isDisabled && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onToggle(id);
         }
       }}
     >
       <div className="flex items-center gap-3 min-w-0">
         <span
           className={`flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center ${
-            isSelected
-              ? "bg-blue-500"
-              : "bg-white border border-slate-300"
+            isSelected ? "bg-blue-500" : "bg-white border border-slate-300"
           }`}
         >
-          {isSelected && <CheckIcon />}
+          {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
         </span>
 
         <div className="min-w-0">
-          <p className="font-semibold text-slate-900 text-base truncate">
-            {job.title}
-          </p>
-          <p className="text-xs text-slate-500">
-            (Matches {job.matchPercentage}% of resume criteria)
+          <p className="font-semibold text-slate-900 text-base truncate">{job.title}</p>
+          {/* The model's own reason for suggesting this title, so the list is
+              inspectable rather than an oracle. */}
+          <p className="text-xs text-slate-500 truncate">
+            {job.reason || `Matches ${job.matchPercentage}% of your resume`}
           </p>
         </div>
       </div>
 
       <span className="flex-shrink-0 inline-flex items-center gap-1 bg-green-50 text-green-600 border border-green-200 rounded-full px-3 py-1 text-xs font-medium ml-3">
-        <TargetIcon />
-        {job.matchPercentage}% Match
+        <Target className="w-3 h-3" />
+        {job.matchPercentage}%
       </span>
     </div>
   );
 
-  if (isSelected) {
-    return (
-      <div className="bg-gradient-to-r from-blue-500 to-purple-500 p-[2px] rounded-xl">
-        {rowContent}
-      </div>
-    );
-  }
-
-  return rowContent;
+  if (!isSelected) return row;
+  return (
+    <div className="bg-gradient-to-r from-blue-500 to-purple-500 p-[2px] rounded-xl">{row}</div>
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-export default function JobTitlesDialog({ onClose, resumeProfile, setSelectedTitles, setJobs, }) {
-  const [jobTitles, setJobTitles] = useState([]);
+export default function JobTitlesDialog({ profile, onClose, onJobsFound }) {
+  const [titles, setTitles] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
-  const [isInferringTitles, setIsInferringTitles] = useState(true);
-  const [isSearchingJobs, setIsSearchingJobs] = useState(false);
-  const [error, setError] = useState(null);
+  const [phase, setPhase] = useState(profile ? "inferring" : "ready");
+  const [error, setError] = useState(() =>
+    profile ? null : { message: "No resume profile available.", retryable: false }
+  );
+  // Bumped to re-run inference; the fetch itself lives entirely in the effect.
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    let isMounted = true;
+    if (!profile) return undefined;
 
-    if (!resumeProfile) {
-      setError("No resume profile provided for inference.");
-      setIsInferringTitles(false);
-      return;
-    }
+    const controller = new AbortController();
+    let cancelled = false;
 
-    setIsInferringTitles(true);
-    setError(null);
-
-    const fetchRealTitles = async () => {
+    (async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/infer-titles", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(resumeProfile),
-        });
+        const result = await inferTitles(profile, { signal: controller.signal });
+        if (cancelled) return;
 
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || "Failed to fetch titles.");
-        }
-
-        const data = await res.json();
-        const titles = data.titles || [];
-
-        if (!isMounted) return;
-
-        if(titles.length === 0) {
-          setError("No suitable job titles could be inferred .");
-          return;
-        }
-
-        setJobTitles(titles);
-        
-        // Pre-select the top matches, mirroring the reference design.
+        setTitles(result);
+        // Pre-select the strongest matches, up to the cap.
         setSelectedIds(
-          titles
-            .slice()
+          [...result]
             .sort((a, b) => b.matchPercentage - a.matchPercentage)
-            .slice(0, MAX_SELECTIONS)
-            .map((job) => job.id ?? job.title)
+            .slice(0, MAX_TITLE_SELECTIONS)
+            .map((entry) => entry.id ?? entry.title)
         );
-      } catch (err) {
-        console.error("Inference Error:", err);
-        if (isMounted) setError("Couldn't load job titles. Please try again.");
-      } finally {
-        if (isMounted) setIsInferringTitles(false);
-      }
-    };
 
-    fetchRealTitles();
+        if (result.length === 0) {
+          setError({
+            message:
+              "No job titles could be inferred from this resume. Try adding more skills or projects on the previous screen.",
+            retryable: false,
+          });
+        }
+      } catch (err) {
+        if (cancelled || err?.name === "AbortError") return;
+        setError(err);
+      } finally {
+        if (!cancelled) setPhase("ready");
+      }
+    })();
 
     return () => {
-      isMounted = false;
+      cancelled = true;
+      controller.abort();
     };
-  }, [resumeProfile]);
+  }, [profile, reloadToken]);
+
+  const retryTitles = () => {
+    setTitles([]);
+    setSelectedIds([]);
+    setError(null);
+    setPhase("inferring");
+    setReloadToken((token) => token + 1);
+  };
 
   const toggleSelection = useCallback((id) => {
-    setSelectedIds((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((selectedId) => selectedId !== id);
-      }
-      if (prev.length >= MAX_SELECTIONS) {
-        return prev; // hard cap at MAX_SELECTIONS
-      }
-      return [...prev, id];
+    setSelectedIds((previous) => {
+      if (previous.includes(id)) return previous.filter((item) => item !== id);
+      if (previous.length >= MAX_TITLE_SELECTIONS) return previous;
+      return [...previous, id];
     });
   }, []);
 
   const handleSearch = async () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length === 0 || phase === "searching") return;
 
-    setIsSearchingJobs(true);
-
-    const selectedJobs = jobTitles.filter((job) =>
-      selectedIds.includes(job.id ?? job.title)
+    const selected = titles.filter((entry) =>
+      selectedIds.includes(entry.id ?? entry.title)
     );
-    
+
+    setPhase("searching");
+    setError(null);
+
     try {
-      setSelectedTitles(selectedJobs);
-
-      const response = await fetch(
-        "http://localhost:8000/api/jobs?country=in",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(selectedJobs),
-        }
-      );
-
-      if(!response.ok){
-        throw new Error("Failed to fetch jobs");
-      }
-
-      const data = await response.json();
-
-      setJobs(data.jobs || []);
-
-      onClose?.();
-
+      const result = await searchJobs(selected, { profile });
+      onJobsFound(result, selected);
     } catch (err) {
-      console.error("Job Search Error:", err);
-      alert("Unable to fetch jobs.");
-
+      // Previously a browser alert(), which blocked the page and offered no
+      // way back other than dismissing it.
+      setError(err);
+      setPhase("ready");
     }
-
-    finally {
-      setIsSearchingJobs(false);
-    }
-
   };
 
-  const isSearchDisabled = selectedIds.length === 0 || isSearchingJobs;
+  const isBusy = phase === "inferring" || phase === "searching";
+  const canSearch = selectedIds.length > 0 && !isBusy;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
       <div className="w-full max-w-2xl mx-auto bg-white rounded-3xl shadow-2xl p-8 sm:p-10 relative">
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSearchingJobs}
-            aria-label="Close dialog"
-            className={`absolute top-5 right-5 transition-colors ${
-              isSearchingJobs
-                ? "text-slate-300 cursor-not-allowed"
-                : "text-slate-400 hover:text-slate-600"
-            }`
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={isBusy}
+          aria-label="Close dialog"
+          className={`absolute top-5 right-5 transition-colors ${
+            isBusy ? "text-slate-300 cursor-not-allowed" : "text-slate-400 hover:text-slate-600"
+          }`}
+        >
+          <X className="w-5 h-5" />
+        </button>
 
-            }
-          >
-            <svg
-              className="w-5 h-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M18 6 6 18" />
-              <path d="M6 6l12 12" />
-            </svg>
-          </button>
-        )}
-
-        {/* Header */}
         <div className="flex flex-col items-center">
           <span className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full px-3 py-1">
-            <BrainIcon />
-            AI Confidence: Strong
+            <Brain className="w-3.5 h-3.5" />
+            Inferred from your resume
           </span>
 
           <h2 className="text-2xl sm:text-3xl font-bold text-center mt-4 text-slate-900">
-            AI has inferred suitable{" "}
+            Job{" "}
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-500">
-              job titles
+              titles
             </span>{" "}
-            based on your resume
+            worth applying for
           </h2>
 
           <p className="text-sm text-slate-500 text-center mt-2 mb-6">
-            Deselect any roles you're not interested in, then search for matching jobs.
+            Deselect any roles you are not interested in, then search for matching jobs.
           </p>
         </div>
 
-        {/* List */}
-        {isInferringTitles ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-12">
-            <SpinnerIcon />
-            <p className="text-sm text-slate-500">
-                Analysing your resume...
-            </p>
-          </div>
-        ) : error ? (
-          <div className="text-center py-12">
-            <p className="text-sm text-red-500"> {error}</p>
-          </div>
+        {phase === "inferring" ? (
+          <StageProgress
+            stages={[{ key: "infer", label: "Working out which roles fit you" }]}
+            current="infer"
+            hint="This usually takes 15-30 seconds."
+          />
+        ) : phase === "searching" ? (
+          <StageProgress
+            stages={[{ key: "search", label: "Searching live job postings" }]}
+            current="search"
+            hint={`Searching ${selectedIds.length} title${
+              selectedIds.length === 1 ? "" : "s"
+            }.`}
+          />
         ) : (
-          <div className="flex flex-col gap-3">
-            {jobTitles.map((job) => {
-              const isSelected = selectedIds.includes(job.id ?? job.title);
+          <>
+            {error && (
+              <ErrorNotice
+                error={error}
+                className="mb-4"
+                onRetry={titles.length === 0 ? retryTitles : handleSearch}
+                onDismiss={() => setError(null)}
+              />
+            )}
 
-              // Rows are disabled once the cap is hit (existing behavior),
-              // and now also while a job search is in flight so selections
-              // can't change until it finishes.
-              const isDisabled =
-                isSearchingJobs ||
-                (!isSelected && selectedIds.length >= MAX_SELECTIONS);
+            {titles.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {titles.map((job) => {
+                  const id = job.id ?? job.title;
+                  const isSelected = selectedIds.includes(id);
+                  return (
+                    <JobTitleRow
+                      key={id}
+                      job={job}
+                      isSelected={isSelected}
+                      isDisabled={!isSelected && selectedIds.length >= MAX_TITLE_SELECTIONS}
+                      onToggle={toggleSelection}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
 
-               return (
-                <JobTitleRow
-                 key={job.id ?? job.title}
-                 job={job}
-                 isSelected={isSelected}
-                 isDisabled={isDisabled}
-                 onToggle={toggleSelection}
-                 />
-               );
-            })}
-          </div>
-        )
-        }
+        {!isBusy && titles.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-6">
+            <p className="text-xs text-slate-400">
+              {selectedIds.length}/{MAX_TITLE_SELECTIONS} selected
+            </p>
 
-        {/* Footer */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-6">
-          <p className="text-xs text-slate-400">
-            {selectedIds.length}/{MAX_SELECTIONS} selected
-          </p>
-
-          <div className="flex justify-end">
             <button
               type="button"
               onClick={handleSearch}
-              disabled={isSearchDisabled}
+              disabled={!canSearch}
               className={`inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-fuchsia-500 shadow-lg shadow-purple-500/30 transition-opacity ${
-                isSearchDisabled
-                  ? "opacity-50 cursor-not-allowed"
-                  : "hover:opacity-90"
+                canSearch ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
               }`}
             >
-              {isSearchingJobs ? (
-                <>
-                <SpinnerIcon />
-                Searching jobs...
-                </>
-              ) : (
-                <>
-                Search Jobs for Selected Titles
-                <ArrowRightIcon />
-                </>
-              )
-
-              }
+              Search jobs for selected titles
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        )}
+
+        {phase === "searching" && (
+          <div className="flex justify-center mt-2">
+            <Loader2 className="w-4 h-4 animate-spin text-slate-300" />
+          </div>
+        )}
       </div>
     </div>
   );

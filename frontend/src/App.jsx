@@ -1,105 +1,117 @@
-// import { useState , useEffect } from "react";
-// import NextHireLanding from "./components/NextHireLanding";
-// import ResumeDialog from "./components/ResumeDialog";
-// import JobTitlesDialog from "./components/JobTitlesdialog";
-// import JobListings from "./components/JobListings";
-// import ATSAnalysisDashboard from "./components/AtsAnalysis";
-
-// function App() {
-//   const [showDialog, setShowDialog] = useState(false);
-//   const [resumeProfile, setResumeProfile] = useState(null);
-//   const [showJobTitlesDialog, setShowJobTitlesDialog] = useState(false);
-//   const [selectedTitles, setSelectedTitles] = useState([]);
-//   const [jobs, setJobs] = useState([]);
-//   const [selectedJob, setSelectedJob] = useState([]);
-//   const [showATS, setShowATS] = useState(false);
-  
-//   useEffect(() => {
-//   console.log("App resumeProfile:", resumeProfile);
-//   }, [resumeProfile]);
-
-//   return (
-//     <>
-//     {!showJobTitlesDialog && jobs.length === 0 && (
-//       < NextHireLanding 
-//        setShowDialog={setShowDialog}
-//     />
-//     )}
-    
-
-//     <ResumeDialog
-//       showDialog={showDialog}
-//       setShowDialog={setShowDialog}
-//       setResumeProfile={setResumeProfile}
-//       setShowJobTitlesDialog={setShowJobTitlesDialog}
-//     />
-
-//     {showJobTitlesDialog && (
-//       <JobTitlesDialog
-//         resumeProfile={resumeProfile}
-//         onClose={() => setShowJobTitlesDialog(false)}
-//         setSelectedTitles={setSelectedTitles}
-//         setJobs={setJobs}
-//       />
-//      )}
-
-//      {!showJobTitlesDialog && (
-//           <JobListings 
-//           jobs={jobs}
-//           selectedTitles={selectedTitles}
-//           setSelectedJob={setSelectedJob}
-//           setShowATS={setShowATS}
-//           />
-//         )}
-//   </>
-//   );
-// }
-
-// export default App;
-
-
-
-
-
-// TEMPORARY WORKFLOW FOR TESTING THE CURRENT COMPONENT.
 import { useState } from "react";
+import NextHireLanding from "./components/NextHireLanding";
 import ResumeDialog from "./components/ResumeDialog";
+import ProfileReview from "./components/ProfileReview";
+import JobTitlesDialog from "./components/JobTitlesDialog";
 import JobListings from "./components/JobListings";
 import ATSAnalysisDashboard from "./components/AtsAnalysis";
 
-function App() {
-  const [showDialog, setShowDialog] = useState(true);
-  const [resumeProfile, setResumeProfile] = useState(null);
-  const [selectedJobs, setSelectedJobs] = useState([]);
-  const [showATS, setShowATS] = useState(false);
+/**
+ * The pipeline, as one explicit state machine.
+ *
+ *   landing -> review -> titles -> jobs -> ats
+ *
+ * Previously this file held a block labelled "TEMPORARY WORKFLOW FOR TESTING"
+ * with the real flow commented out beneath it, which left the landing page and
+ * the job-titles step unreachable. Each stage is now a named step rather than a
+ * set of independent booleans, so no combination of flags can put the app into
+ * a state that renders two screens at once or none at all.
+ */
 
-  if (showATS) {
+const STEP = {
+  landing: "landing",
+  review: "review",
+  titles: "titles",
+  jobs: "jobs",
+  ats: "ats",
+};
+
+export default function App() {
+  const [step, setStep] = useState(STEP.landing);
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
+
+  const [profile, setProfile] = useState(null);
+  const [gaps, setGaps] = useState([]);
+  const [selectedTitles, setSelectedTitles] = useState([]);
+  const [search, setSearch] = useState({ jobs: [], warnings: [] });
+  const [selectedJobs, setSelectedJobs] = useState([]);
+
+  const restart = () => {
+    setStep(STEP.landing);
+    setShowResumeDialog(false);
+    setProfile(null);
+    setGaps([]);
+    setSelectedTitles([]);
+    setSearch({ jobs: [], warnings: [] });
+    setSelectedJobs([]);
+  };
+
+  if (step === STEP.review) {
+    return (
+      <ProfileReview
+        profile={profile}
+        gaps={gaps}
+        onBack={restart}
+        onConfirm={(corrected) => {
+          setProfile(corrected);
+          setStep(STEP.titles);
+        }}
+      />
+    );
+  }
+
+  if (step === STEP.titles) {
+    return (
+      <JobTitlesDialog
+        profile={profile}
+        onClose={() => setStep(STEP.review)}
+        onJobsFound={(result, titles) => {
+          setSearch(result);
+          setSelectedTitles(titles);
+          setStep(STEP.jobs);
+        }}
+      />
+    );
+  }
+
+  if (step === STEP.jobs) {
+    return (
+      <JobListings
+        jobs={search.jobs}
+        warnings={search.warnings}
+        selectedTitles={selectedTitles}
+        onBack={() => setStep(STEP.titles)}
+        onAnalyze={(jobs) => {
+          setSelectedJobs(jobs);
+          setStep(STEP.ats);
+        }}
+      />
+    );
+  }
+
+  if (step === STEP.ats) {
     return (
       <ATSAnalysisDashboard
         selectedJobs={selectedJobs}
-        resumeProfile={resumeProfile}
+        resumeProfile={profile}
+        onBack={() => setStep(STEP.jobs)}
       />
     );
   }
 
   return (
     <>
+      <NextHireLanding setShowDialog={setShowResumeDialog} />
       <ResumeDialog
-        showDialog={showDialog}
-        setShowDialog={setShowDialog}
-        setResumeProfile={setResumeProfile}
-        setShowJobTitlesDialog={() => {}}
+        showDialog={showResumeDialog}
+        onClose={() => setShowResumeDialog(false)}
+        onParsed={({ profile: parsed, gaps: found }) => {
+          setProfile(parsed);
+          setGaps(found);
+          setShowResumeDialog(false);
+          setStep(STEP.review);
+        }}
       />
-      {!showDialog && resumeProfile && (
-        <JobListings
-          jobs={[]}
-          selectedTitles={[]}
-          setSelectedJobs={setSelectedJobs}
-          setShowATS={setShowATS}
-        />
-      )}
     </>
   );
 }
-
-export default App;

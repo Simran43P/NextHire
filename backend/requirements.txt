@@ -1,0 +1,28 @@
+# NextHire backend dependencies.
+#
+# Install into a virtual environment:
+#   python -m venv .venv
+#   .venv\Scripts\activate        (Windows)
+#   source .venv/bin/activate     (macOS / Linux)
+#   pip install -r backend/requirements.txt
+#
+# Versions are pinned so an install is reproducible. Bump deliberately.
+
+fastapi>=0.115.0,<0.116.0
+uvicorn>=0.34.0,<0.35.0
+
+# Multipart form parsing - required by FastAPI for file uploads.
+python-multipart>=0.0.20,<0.1.0
+
+# PDF text extraction.
+pymupdf>=1.25.0,<2.0.0
+
+# Async HTTP, used for both the local model and the job search API.
+httpx>=0.28.0,<0.29.0
+
+# .env loading.
+python-dotenv>=1.0.0,<2.0.0
+
+# --- development / test only -------------------------------------------------
+pytest>=8.0.0,<9.0.0
+pytest-asyncio>=0.24.0,<2.0.0
