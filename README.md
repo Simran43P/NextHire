@@ -96,6 +96,13 @@ npm run dev
 
 Runs on http://localhost:5173.
 
+Both servers are pinned to IPv4 (`127.0.0.1`). Left to itself Vite binds
+"localhost", which on Windows can resolve to `::1` only - while uvicorn binds
+`127.0.0.1` only. The two then sit on opposite stacks and the page is refused
+in a normal browser, while still working inside an editor that proxies the
+port. If you change the frontend port, add the new origin to `CORS_ORIGINS` in
+`backend/.env`.
+
 ---
 
 ## Configuration
