@@ -4,7 +4,7 @@
 |---|---|
 | **Companion to** | [PRD.md](PRD.md) — every step traces to a requirement ID there |
 | **Total steps** | **44**, across 5 phases |
-| **Progress** | **33 of 44 done** — Phases 0, 1 and 2 complete |
+| **Progress** | **39 of 44 done** — Phases 0, 1, 2 and 3 complete |
 | **Document status** | Draft v1.0 |
 | **Last updated** | 2026-09-14 |
 
@@ -30,9 +30,9 @@ blocker in its own phase can run in parallel with its siblings.
 | **Phase 0** — Reconnect the pipeline | 12 | Mostly S | **Done** | The app runs end to end on live data |
 | **Phase 1** — Make the analysis trustworthy | 9 | S–M | **Done** | The scores can be believed |
 | **Phase 2** — Accounts and persistence | 12 | L | **Done** | It becomes a product, not a demo |
-| **Phase 3** — Resume optimisation | 6 | M–L | Not started | The candidate leaves with something |
+| **Phase 3** — Resume optimisation | 6 | M–L | **Done** | The candidate leaves with something |
 | **Phase 4** — Application lifecycle | 5 | M | Not started | The loop the landing page promises |
-| | **44** | | **33 done** | |
+| | **44** | | **39 done** | |
 
 **The shortest path to a working demo is Phase 0 alone — 12 steps, almost all
 small, no new features.** Everything needed for it is already written; it is

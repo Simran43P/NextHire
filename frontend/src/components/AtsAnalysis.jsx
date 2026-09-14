@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Check,
   Loader2,
+  ArrowRight,
   Quote,
   RefreshCw,
   Sparkles,
@@ -84,7 +85,7 @@ function SkillChip({ skill, evidence, isOpen, onToggle, tone }) {
   );
 }
 
-function AnalysisPanel({ job, state, onRetry }) {
+function AnalysisPanel({ job, state, onRetry, onOptimize }) {
   // Keyed by job, so switching jobs collapses the open quote without needing
   // an effect to reset it.
   const [open, setOpen] = useState({ jobId: null, skill: null });
@@ -263,17 +264,19 @@ function AnalysisPanel({ job, state, onRetry }) {
             </div>
           )}
 
-          {/* Not built yet (Phase 3). Labelled rather than left looking live. */}
           <button
             type="button"
-            disabled
-            className="w-full mt-8 py-4 rounded-full text-slate-500 font-bold text-lg bg-slate-100 flex items-center justify-center gap-2 cursor-not-allowed"
+            onClick={() => onOptimize?.(job, analysis)}
+            className="w-full mt-8 py-4 rounded-full text-white font-bold text-lg bg-gradient-to-r from-blue-500 to-fuchsia-500 shadow-xl shadow-fuchsia-500/20 flex items-center justify-center gap-2 hover:opacity-95 transition-opacity"
           >
-            Optimize resume
-            <span className="bg-blue-50 text-blue-600 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">
-              Coming soon
-            </span>
+            Tailor my resume for this role
+            <ArrowRight className="w-5 h-5" />
           </button>
+
+          <p className="text-center text-xs text-slate-400 mt-3">
+            Reorders and rephrases what is already on your resume. It cannot add
+            anything you have not written.
+          </p>
 
           <div className="text-center mt-4">
             <span className="text-sm text-slate-500">Get upskilling plan</span>
@@ -293,6 +296,7 @@ export default function ATSAnalysisDashboard({
   profileId = null,
   background = false,
   onBack,
+  onOptimize,
 }) {
   const [jobs, setJobs] = useState(selectedJobs);
   const [selectedId, setSelectedId] = useState(selectedJobs[0]?.id ?? null);
@@ -545,6 +549,7 @@ export default function ATSAnalysisDashboard({
               job={selected}
               state={selected ? results[selected.id] : null}
               onRetry={selected ? () => runAnalysis(selected) : undefined}
+              onOptimize={onOptimize}
             />
           </div>
         </div>

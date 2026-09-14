@@ -6,6 +6,7 @@ import ProfileReview from "./components/ProfileReview";
 import JobTitlesDialog from "./components/JobTitlesDialog";
 import JobListings from "./components/JobListings";
 import ATSAnalysisDashboard from "./components/AtsAnalysis";
+import ResumeOptimizer from "./components/ResumeOptimizer";
 import AuthDialog from "./components/AuthDialog";
 import AccountMenu from "./components/AccountMenu";
 import { AuthProvider } from "./auth/AuthContext";
@@ -15,7 +16,7 @@ import { awaitTask, fetchProfile, listActiveTasks, saveProfile } from "./api/pip
 /**
  * The pipeline, as one explicit state machine.
  *
- *   landing -> review -> titles -> jobs -> ats
+ *   landing -> review -> titles -> jobs -> ats -> optimize
  *
  * Each stage is a named step rather than a set of independent booleans, so no
  * combination of flags can render two screens at once or none at all.
@@ -31,6 +32,7 @@ const STEP = {
   titles: "titles",
   jobs: "jobs",
   ats: "ats",
+  optimize: "optimize",
 };
 
 function Pipeline() {
@@ -48,6 +50,7 @@ function Pipeline() {
   const [selectedTitles, setSelectedTitles] = useState([]);
   const [search, setSearch] = useState({ jobs: [], warnings: [] });
   const [selectedJobs, setSelectedJobs] = useState([]);
+  const [optimising, setOptimising] = useState(null); // { job, analysis }
 
   const [resuming, setResuming] = useState(false);
 
@@ -61,6 +64,7 @@ function Pipeline() {
     setSelectedTitles([]);
     setSearch({ jobs: [], warnings: [] });
     setSelectedJobs([]);
+    setOptimising(null);
   }, []);
 
   // Reattach to work that was already running.
@@ -232,6 +236,26 @@ function Pipeline() {
           profileId={profileId}
           background={isAuthenticated}
           onBack={() => setStep(STEP.jobs)}
+          onOptimize={(job, analysis) => {
+            setOptimising({ job, analysis });
+            setStep(STEP.optimize);
+          }}
+        />
+        {dialogs}
+      </>
+    );
+  }
+
+  if (step === STEP.optimize) {
+    return (
+      <>
+        {header}
+        <ResumeOptimizer
+          job={optimising?.job}
+          analysis={optimising?.analysis}
+          profile={profile}
+          profileId={profileId}
+          onBack={() => setStep(STEP.ats)}
         />
         {dialogs}
       </>

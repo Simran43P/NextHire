@@ -19,6 +19,8 @@ your machine.
 Upload PDF  →  Structured profile  →  Review & correct  →  Job titles
                                                                ↓
                        ATS analysis  ←  Pick up to 5  ←  Live job postings
+                            ↓
+                   Tailored resume  →  ATS-safe PDF
 ```
 
 You can run all of it **without an account**. Signing in is what makes the
@@ -198,6 +200,9 @@ backend/
   job_search.py     Titles       -> live postings (or samples)
   prescore.py       Free local keyword overlap per posting
   ats_matcher.py    Profile + posting -> match analysis
+  optimizer.py      Analysis -> reviewable tailoring edits
+  fabrication.py    Blocks any generated claim the profile does not support
+  resume_pdf.py     ATS-safe PDF rendering
   models.py         13 tables: users, resumes, profiles, jobs, analyses...
   db.py             Async engine; WAL and foreign keys turned on
   auth.py           Argon2id passwords, server-side sessions, ownership guards
@@ -246,6 +251,28 @@ A few things work the way they do deliberately:
   cannot survive an edit.
 - **Deleting your account really deletes it.** Rows cascade, the stored PDFs are
   removed from disk, and every session is revoked immediately.
+
+### The resume tailoring cannot invent anything
+
+A resume tool that fabricates employment history is not a flawed product, it is
+a harmful one - the person who sends that resume is the one who gets caught, and
+they will not have read the generated text as carefully as they wrote their own.
+
+So "do not fabricate" is not a line in a prompt. Every generated sentence is
+checked against the candidate's own profile, and any technology, employer,
+qualification or number the profile does not contain gets the whole suggestion
+discarded before it is shown. The job description is deliberately *not* part of
+that check: a posting asking for Kubernetes is not evidence the candidate has
+used it.
+
+It catches real cases. Asked to tailor a Python/React resume for a Java role,
+the model wrote a summary describing the candidate as having "a strong
+foundation in Java". That suggestion never reached the screen.
+
+Tailoring also refuses to pretend. On a posting the candidate genuinely fits,
+re-scoring the tailored version moved 80% to 85%. On a Java role they do not
+fit, it stayed at 40% - because the only way to raise that number would have
+been to invent something.
 
 ### Why the score is not just whatever the model said
 

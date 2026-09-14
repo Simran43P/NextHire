@@ -149,7 +149,7 @@ and each stage is a separate backend call.
 
 ## 4. Current state of the codebase
 
-Establishes the baseline this PRD builds on. **Phases 0, 1 and 2 of
+Establishes the baseline this PRD builds on. **Phases 0, 1, 2 and 3 of
 [BUILD-PLAN.md](BUILD-PLAN.md) are complete**; this table reflects the state
 after that work.
 
@@ -177,7 +177,10 @@ after that work.
 | Background task queue | **Built** | `backend/tasks.py` — work survives a refresh and is reattached by id |
 | Rate limiting | **Built** | Per account, falling back to IP, on uploads, inference and auth |
 | Data export / account deletion | **Built** | JSON export; deletion removes rows and files and revokes sessions |
-| Resume optimisation | **Not started** | Phase 3. The button is present and labelled "Coming soon" |
+| Resume optimisation | **Built** | `optimizer.py` — reviewable per-edit diffs, applied only where accepted |
+| Fabrication guard | **Built** | `fabrication.py` — every generated claim checked against the profile before it is offered |
+| ATS-safe PDF export | **Built** | `resume_pdf.py` — single column, base-14 fonts, no images, verified by re-extraction |
+| Before/after re-scoring | **Built** | The tailored profile is re-analysed against the same posting |
 | Cover letter generator | **Not started** | Phase 4. Advertised on the landing page |
 | Application tracker | **Not started** | Phase 4. Advertised on the landing page |
 | Interview prep | **Not started** | Phase 4. Advertised on the landing page |

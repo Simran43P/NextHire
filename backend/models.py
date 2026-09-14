@@ -261,6 +261,14 @@ class ApplicationStatus(str, enum.Enum):
 
 
 class TailoredResume(Base, TimestampMixin):
+    """
+    One tailored resume, plus the record of how it came to be.
+
+    The proposed changes and the accepted subset are both kept. Knowing which
+    edits a candidate rejected is what makes a later "before and after" honest,
+    and it means a tailored resume can be explained rather than just produced.
+    """
+
     __tablename__ = "tailored_resumes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -270,6 +278,18 @@ class TailoredResume(Base, TimestampMixin):
     job_id: Mapped[int] = mapped_column(
         ForeignKey("jobs.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    # Which version of the profile this was tailored from. A later correction
+    # does not silently invalidate it, but it does explain a score that no
+    # longer matches.
+    profile_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    tailored_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    changes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    accepted_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # Suggestions discarded by the fabrication guard, kept so the candidate can
+    # see what was thrown out on their behalf.
+    rejected_changes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    before_score: Mapped[int | None] = mapped_column(Integer, default=None)
+    after_score: Mapped[int | None] = mapped_column(Integer, default=None)
     content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     storage_key: Mapped[str | None] = mapped_column(String(255), default=None)
 

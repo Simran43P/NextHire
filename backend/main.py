@@ -7,6 +7,7 @@ The pipeline, one endpoint per stage:
     POST /api/infer-titles   profile    -> ranked job titles
     POST /api/jobs           titles     -> live postings (keyword pre-scored)
     POST /api/analyze-ats    profile+JD -> ATS match analysis
+    POST /api/optimize       analysis   -> reviewable tailoring edits
 
 Plus accounts (/api/auth), background work (/api/tasks), and data ownership
 (/api/account). Guests may run the whole pipeline; signing in is what makes the
@@ -26,7 +27,13 @@ import config
 import db as database
 import llm
 import tasks
-from routers import account, auth as auth_routes, pipeline, tasks as task_routes
+from routers import (
+    account,
+    auth as auth_routes,
+    optimize,
+    pipeline,
+    tasks as task_routes,
+)
 
 
 @contextlib.asynccontextmanager
@@ -67,6 +74,7 @@ app.add_middleware(
 
 app.include_router(auth_routes.router)
 app.include_router(pipeline.router)
+app.include_router(optimize.router)
 app.include_router(task_routes.router)
 app.include_router(account.router)
 
