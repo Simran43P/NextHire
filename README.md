@@ -163,6 +163,28 @@ npm run build
 
 ---
 
+## Looking inside the database
+
+The database is one SQLite file at `backend/nexthire.db`. To read it from the
+terminal:
+
+```bash
+cd backend
+python inspect_db.py                          # row counts per table
+python inspect_db.py users                    # rows in one table
+python inspect_db.py profiles --full          # untruncated values
+python inspect_db.py --sql "SELECT email FROM users"
+```
+
+It opens the file read-only, so it is safe to run while the server is up, and
+it masks password hashes and session tokens.
+
+For a GUI, the **SQLite Viewer** extension in VS Code opens the file on click;
+[DB Browser for SQLite](https://sqlitebrowser.org) is the standalone
+equivalent. Either is fine to point at the file while the app is running.
+
+---
+
 ## Project layout
 
 ```
